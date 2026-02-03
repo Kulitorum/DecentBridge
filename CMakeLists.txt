@@ -16,12 +16,12 @@ find_package(Qt6 REQUIRED COMPONENTS
     Bluetooth
     Network
     WebSockets
+    Quick
+    Qml
 )
 
-# Android requires Gui for the platform plugin, even for non-GUI apps
-if(ANDROID)
-    find_package(Qt6 REQUIRED COMPONENTS Gui)
-endif()
+# Gui is needed for QML on all platforms
+find_package(Qt6 REQUIRED COMPONENTS Gui)
 
 # Core sources
 set(SOURCES
@@ -132,6 +132,14 @@ list(APPEND HEADERS
 # Create executable (qt_add_executable handles Android APK generation)
 qt_add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
+# Add QML module for the UI
+qt_add_qml_module(${PROJECT_NAME}
+    URI DecentBridge
+    VERSION 1.0
+    QML_FILES
+        src/qml/Main.qml
+)
+
 # Add resources (API documentation)
 qt_add_resources(${PROJECT_NAME} "api_docs"
     PREFIX "/"
@@ -171,12 +179,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Bluetooth
     Qt6::Network
     Qt6::WebSockets
+    Qt6::Gui
+    Qt6::Quick
+    Qt6::Qml
 )
-
-# Android requires Gui for the platform plugin
-if(ANDROID)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::Gui)
-endif()
 
 # iOS specific
 if(IOS)
