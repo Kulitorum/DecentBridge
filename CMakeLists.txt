@@ -116,15 +116,17 @@ else()
     list(APPEND HEADERS src/ble/transport/qtscalebletransport.h)
 endif()
 
-# Network (HTTP + WebSocket servers)
+# Network (HTTP + WebSocket + Discovery)
 list(APPEND SOURCES
     src/network/httpserver.cpp
     src/network/websocketserver.cpp
+    src/network/discoveryservice.cpp
 )
 
 list(APPEND HEADERS
     src/network/httpserver.h
     src/network/websocketserver.h
+    src/network/discoveryservice.h
 )
 
 # Create executable (qt_add_executable handles Android APK generation)

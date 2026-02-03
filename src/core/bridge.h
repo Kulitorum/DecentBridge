@@ -12,6 +12,7 @@ class ScaleDevice;
 class SensorDevice;
 class HttpServer;
 class WebSocketServer;
+class DiscoveryService;
 
 /**
  * @brief Main bridge orchestrator
@@ -82,6 +83,7 @@ private:
     QList<SensorDevice*> m_sensors;
     std::unique_ptr<HttpServer> m_httpServer;
     std::unique_ptr<WebSocketServer> m_wsServer;
+    std::unique_ptr<DiscoveryService> m_discoveryService;
 
     bool m_running = false;
     bool m_scaleConnecting = false; // Prevents multiple simultaneous connection attempts

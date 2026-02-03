@@ -11,6 +11,7 @@ class Settings : public QObject
 {
     Q_OBJECT
 
+    Q_PROPERTY(QString bridgeName READ bridgeName WRITE setBridgeName NOTIFY bridgeNameChanged)
     Q_PROPERTY(int httpPort READ httpPort WRITE setHttpPort NOTIFY httpPortChanged)
     Q_PROPERTY(int webSocketPort READ webSocketPort WRITE setWebSocketPort NOTIFY webSocketPortChanged)
     Q_PROPERTY(bool autoConnect READ autoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
@@ -18,6 +19,10 @@ class Settings : public QObject
 
 public:
     explicit Settings(QObject *parent = nullptr);
+
+    // Bridge identity
+    QString bridgeName() const { return m_bridgeName; }
+    void setBridgeName(const QString &name);
 
     // Network settings
     int httpPort() const { return m_httpPort; }
@@ -49,6 +54,7 @@ public:
     bool saveToFile(const QString &path);
 
 signals:
+    void bridgeNameChanged();
     void httpPortChanged();
     void webSocketPortChanged();
     void autoConnectChanged();
@@ -56,6 +62,7 @@ signals:
     void settingsChanged();
 
 private:
+    QString m_bridgeName = "DecentBridge";
     int m_httpPort = 8080;
     int m_webSocketPort = 8081;
     bool m_autoConnect = true;

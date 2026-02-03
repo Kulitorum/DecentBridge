@@ -610,6 +610,7 @@ void HttpServer::handleDisconnectScale(const HttpRequest &, HttpResponse &res)
 void HttpServer::handleGetSettings(const HttpRequest &, HttpResponse &res)
 {
     QJsonObject settings;
+    settings["bridgeName"] = m_bridge->settings()->bridgeName();
     settings["httpPort"] = m_bridge->settings()->httpPort();
     settings["webSocketPort"] = m_bridge->settings()->webSocketPort();
     settings["autoConnect"] = m_bridge->settings()->autoConnect();
@@ -622,6 +623,9 @@ void HttpServer::handlePostSettings(const HttpRequest &req, HttpResponse &res)
     QJsonDocument doc = QJsonDocument::fromJson(req.body);
     QJsonObject obj = doc.object();
 
+    if (obj.contains("bridgeName")) {
+        m_bridge->settings()->setBridgeName(obj["bridgeName"].toString());
+    }
     if (obj.contains("autoConnect")) {
         m_bridge->settings()->setAutoConnect(obj["autoConnect"].toBool());
     }

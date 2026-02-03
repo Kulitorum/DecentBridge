@@ -12,6 +12,15 @@ Settings::Settings(QObject *parent)
 {
 }
 
+void Settings::setBridgeName(const QString &name)
+{
+    if (m_bridgeName != name) {
+        m_bridgeName = name;
+        emit bridgeNameChanged();
+        emit settingsChanged();
+    }
+}
+
 void Settings::setHttpPort(int port)
 {
     if (m_httpPort != port) {
@@ -89,6 +98,8 @@ bool Settings::loadFromFile(const QString &path)
 
     QJsonObject obj = doc.object();
 
+    if (obj.contains("bridgeName"))
+        m_bridgeName = obj["bridgeName"].toString();
     if (obj.contains("httpPort"))
         m_httpPort = obj["httpPort"].toInt();
     if (obj.contains("webSocketPort"))
@@ -112,6 +123,7 @@ bool Settings::loadFromFile(const QString &path)
 bool Settings::saveToFile(const QString &path)
 {
     QJsonObject obj;
+    obj["bridgeName"] = m_bridgeName;
     obj["httpPort"] = m_httpPort;
     obj["webSocketPort"] = m_webSocketPort;
     obj["autoConnect"] = m_autoConnect;

@@ -8,6 +8,7 @@
 #include "ble/sensors/sensorfactory.h"
 #include "network/httpserver.h"
 #include "network/websocketserver.h"
+#include "network/discoveryservice.h"
 
 #include <QLoggingCategory>
 #include <QTimer>
@@ -21,6 +22,7 @@ Bridge::Bridge(Settings *settings, QObject *parent)
     , m_de1(std::make_unique<DE1Device>())
     , m_httpServer(std::make_unique<HttpServer>(this))
     , m_wsServer(std::make_unique<WebSocketServer>(this))
+    , m_discoveryService(std::make_unique<DiscoveryService>(settings))
 {
     setupConnections();
 }
@@ -74,6 +76,11 @@ bool Bridge::start()
         return false;
     }
 
+    // Start discovery service (for network discovery)
+    if (!m_discoveryService->start()) {
+        qCWarning(lcBridge) << "Failed to start discovery service (non-fatal)";
+    }
+
     // Start BLE scanning
     m_bleManager->startScan();
 
@@ -106,6 +113,7 @@ void Bridge::stop()
 
     m_httpServer->stop();
     m_wsServer->stop();
+    m_discoveryService->stop();
 
     m_running = false;
     emit stopped();
