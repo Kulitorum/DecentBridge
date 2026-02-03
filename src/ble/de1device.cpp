@@ -3,6 +3,7 @@
 
 #include <QLoggingCategory>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QDateTime>
 
 Q_LOGGING_CATEGORY(lcDE1, "bridge.de1")

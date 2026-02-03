@@ -32,6 +32,9 @@ void HttpServer::setupRoutes()
     // Root - HTML dashboard
     m_getRoutes["/"] = [this](auto& req, auto& res) { handleDashboard(req, res); };
 
+    // Favicon
+    m_getRoutes["/favicon.png"] = [this](auto& req, auto& res) { handleFavicon(req, res); };
+
     // API Documentation - redirect to trailing slash so relative paths work
     m_getRoutes["/api"] = [](auto&, auto& res) {
         res.statusCode = 302;
@@ -55,6 +58,7 @@ void HttpServer::setupRoutes()
     m_getRoutes["/api/docs/vendor/asyncapi-standalone.js"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "vendor/asyncapi-standalone.js"); };
     m_getRoutes["/api/docs/vendor/asyncapi.css"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "vendor/asyncapi.css"); };
     m_getRoutes["/api/docs/vendor/js-yaml.min.js"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "vendor/js-yaml.min.js"); };
+    m_getRoutes["/api/docs/favicon.png"] = [this](auto& req, auto& res) { handleFavicon(req, res); };
 
     // GET routes
     m_getRoutes["/api/v1/devices"] = [this](auto& req, auto& res) { handleGetDevices(req, res); };
@@ -638,6 +642,7 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DecentBridge</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -1105,5 +1110,17 @@ void HttpServer::handleApiDocsFile(const HttpRequest &, HttpResponse &res, const
         res.body = file.readAll();
     } else {
         res.setError(404, "File not found: " + filename);
+    }
+}
+
+void HttpServer::handleFavicon(const HttpRequest &, HttpResponse &res)
+{
+    QFile file(":/assets/api/favicon.png");
+    if (file.open(QIODevice::ReadOnly)) {
+        res.headers["Content-Type"] = "image/png";
+        res.headers["Cache-Control"] = "public, max-age=86400";
+        res.body = file.readAll();
+    } else {
+        res.setError(404, "Favicon not found");
     }
 }

@@ -99,6 +99,7 @@ private:
     // API Documentation
     void handleApiDocs(const HttpRequest &req, HttpResponse &res);
     void handleApiDocsFile(const HttpRequest &req, HttpResponse &res, const QString &filename);
+    void handleFavicon(const HttpRequest &req, HttpResponse &res);
 
     Bridge *m_bridge;
     QTcpServer *m_server = nullptr;

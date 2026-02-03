@@ -145,6 +145,7 @@ qt_add_resources(${PROJECT_NAME} "api_docs"
         assets/api/vendor/asyncapi-standalone.js
         assets/api/vendor/asyncapi.css
         assets/api/vendor/js-yaml.min.js
+        assets/api/favicon.png
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
