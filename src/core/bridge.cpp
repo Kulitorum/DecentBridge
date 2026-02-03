@@ -8,6 +8,7 @@
 #include "network/websocketserver.h"
 
 #include <QLoggingCategory>
+#include <QTimer>
 
 Q_LOGGING_CATEGORY(lcBridge, "bridge.core")
 
@@ -128,14 +129,21 @@ void Bridge::connectToScale(const QBluetoothDeviceInfo &device)
 {
     qCInfo(lcBridge) << "connectToScale called for:" << device.name() << device.address().toString();
 
-    // Don't connect if already connected or connecting
+    // Don't connect if already connected
     if (m_scale && m_scale->isConnected()) {
         qCInfo(lcBridge) << "Scale already connected, ignoring:" << device.name();
         return;
     }
+
+    // If a connection is "in progress" but taking too long, allow override
+    // This handles cases where previous connection attempt got stuck
     if (m_scaleConnecting) {
-        qCInfo(lcBridge) << "Scale connection already in progress, ignoring:" << device.name();
-        return;
+        qCWarning(lcBridge) << "Previous connection attempt stuck, cleaning up";
+        if (m_scale) {
+            m_scale->deleteLater();
+            m_scale = nullptr;
+        }
+        m_scaleConnecting = false;
     }
 
     // Use ScaleFactory to create the appropriate scale type
@@ -161,6 +169,19 @@ void Bridge::connectToScale(const QBluetoothDeviceInfo &device)
     });
     connect(m_scale, &ScaleDevice::weightChanged, this, [this](double weight) {
         m_wsServer->broadcastScaleWeight(weight, m_scale ? m_scale->flowRate() : 0.0);
+    });
+    // Handle connection errors
+    connect(m_scale, &ScaleDevice::errorOccurred, this, [this](const QString &error) {
+        qCWarning(lcBridge) << "Scale connection error:" << error;
+        m_scaleConnecting = false;
+    });
+
+    // Connection timeout - reset flag after 15 seconds if still connecting
+    QTimer::singleShot(15000, this, [this]() {
+        if (m_scaleConnecting && (!m_scale || !m_scale->isConnected())) {
+            qCWarning(lcBridge) << "Scale connection timeout, resetting";
+            m_scaleConnecting = false;
+        }
     });
 
     m_scale->connectToDevice(device);
