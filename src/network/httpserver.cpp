@@ -31,9 +31,18 @@ void HttpServer::setupRoutes()
     // Root - HTML dashboard
     m_getRoutes["/"] = [this](auto& req, auto& res) { handleDashboard(req, res); };
 
-    // API Documentation
-    m_getRoutes["/api"] = [this](auto& req, auto& res) { handleApiDocs(req, res); };
-    m_getRoutes["/api/docs"] = [this](auto& req, auto& res) { handleApiDocs(req, res); };
+    // API Documentation - redirect to trailing slash so relative paths work
+    m_getRoutes["/api"] = [](auto&, auto& res) {
+        res.statusCode = 302;
+        res.statusText = "Found";
+        res.headers["Location"] = "/api/docs/";
+    };
+    m_getRoutes["/api/docs"] = [](auto&, auto& res) {
+        res.statusCode = 302;
+        res.statusText = "Found";
+        res.headers["Location"] = "/api/docs/";
+    };
+    m_getRoutes["/api/docs/"] = [this](auto& req, auto& res) { handleApiDocs(req, res); };
     m_getRoutes["/api/docs/rest_v1.yml"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "rest_v1.yml"); };
     m_getRoutes["/api/docs/websocket_v1.yml"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "websocket_v1.yml"); };
     // Vendor files (Swagger UI, AsyncAPI, etc.)
