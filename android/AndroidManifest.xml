@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="io.github.decentbridge"
+    android:versionCode="1"
+    android:versionName="0.1.0">
+
+    <!-- Bluetooth permissions -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+
+    <!-- Location required for BLE scanning -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Network for HTTP/WebSocket servers -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Foreground service permissions -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+
+    <application
+        android:name="org.qtproject.qt.android.bindings.QtApplication"
+        android:label="DecentBridge"
+        android:icon="@drawable/icon"
+        android:allowBackup="true">
+
+        <activity
+            android:name="io.github.decentbridge.BridgeActivity"
+            android:configChanges="orientation|screenSize|screenLayout|uiMode|keyboard|keyboardHidden"
+            android:launchMode="singleTop"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <meta-data android:name="android.app.lib_name" android:value="DecentBridge" />
+        </activity>
+
+        <service
+            android:name="io.github.decentbridge.BridgeService"
+            android:enabled="true"
+            android:exported="false"
+            android:stopWithTask="false" />
+
+    </application>
+
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
+</manifest>

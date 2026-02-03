@@ -1,0 +1,46 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# Qt Creator
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+*.moc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+*.autosave
+CMakeLists.txt.user*
+
+# C++ compiled files
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+*.exe
+*.app
+
+# Android
+android/build/
+android/.gradle/
+*.apk
+*.aab
+*.keystore
+local.properties
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log

@@ -1,0 +1,926 @@
+#include "httpserver.h"
+#include "core/bridge.h"
+#include "core/settings.h"
+#include "ble/blemanager.h"
+#include "ble/de1device.h"
+#include "ble/scaledevice.h"
+
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QLoggingCategory>
+#include <QUrlQuery>
+
+Q_LOGGING_CATEGORY(lcHttp, "bridge.http")
+
+HttpServer::HttpServer(Bridge *bridge, QObject *parent)
+    : QObject(parent)
+    , m_bridge(bridge)
+{
+    setupRoutes();
+}
+
+HttpServer::~HttpServer()
+{
+    stop();
+}
+
+void HttpServer::setupRoutes()
+{
+    // Root - HTML dashboard
+    m_getRoutes["/"] = [this](auto& req, auto& res) { handleDashboard(req, res); };
+
+    // GET routes
+    m_getRoutes["/api/v1/devices"] = [this](auto& req, auto& res) { handleGetDevices(req, res); };
+    m_getRoutes["/api/v1/devices/scan"] = [this](auto& req, auto& res) { handleScanDevices(req, res); };
+    m_getRoutes["/api/v1/devices/discovered"] = [this](auto& req, auto& res) { handleGetDiscoveredDevices(req, res); };
+    m_getRoutes["/api/v1/machine/info"] = [this](auto& req, auto& res) { handleGetMachineInfo(req, res); };
+    m_getRoutes["/api/v1/machine/state"] = [this](auto& req, auto& res) { handleGetMachineState(req, res); };
+    m_getRoutes["/api/v1/machine/settings"] = [this](auto& req, auto& res) { handleGetMachineSettings(req, res); };
+    m_getRoutes["/api/v1/machine/shotSettings"] = [this](auto& req, auto& res) { handleGetShotSettings(req, res); };
+    m_getRoutes["/api/v1/settings"] = [this](auto& req, auto& res) { handleGetSettings(req, res); };
+
+    // POST routes
+    m_postRoutes["/api/v1/machine/profile"] = [this](auto& req, auto& res) { handlePostProfile(req, res); };
+    m_postRoutes["/api/v1/machine/settings"] = [this](auto& req, auto& res) { handlePostMachineSettings(req, res); };
+    m_postRoutes["/api/v1/machine/shotSettings"] = [this](auto& req, auto& res) { handlePostShotSettings(req, res); };
+    m_postRoutes["/api/v1/settings"] = [this](auto& req, auto& res) { handlePostSettings(req, res); };
+
+    // PUT routes
+    m_putRoutes["/api/v1/devices/connect"] = [this](auto& req, auto& res) { handleConnectDevice(req, res); };
+    m_putRoutes["/api/v1/scale/tare"] = [this](auto& req, auto& res) { handleTareScale(req, res); };
+}
+
+bool HttpServer::start(int port)
+{
+    if (m_server) {
+        return m_server->isListening();
+    }
+
+    m_server = new QTcpServer(this);
+    connect(m_server, &QTcpServer::newConnection, this, &HttpServer::onNewConnection);
+
+    if (!m_server->listen(QHostAddress::Any, port)) {
+        qCWarning(lcHttp) << "Failed to start HTTP server:" << m_server->errorString();
+        delete m_server;
+        m_server = nullptr;
+        return false;
+    }
+
+    qCInfo(lcHttp) << "HTTP server listening on port" << port;
+    return true;
+}
+
+void HttpServer::stop()
+{
+    if (m_server) {
+        m_server->close();
+        delete m_server;
+        m_server = nullptr;
+    }
+}
+
+void HttpServer::onNewConnection()
+{
+    while (m_server->hasPendingConnections()) {
+        QTcpSocket *socket = m_server->nextPendingConnection();
+        connect(socket, &QTcpSocket::readyRead, this, &HttpServer::onReadyRead);
+        connect(socket, &QTcpSocket::disconnected, this, &HttpServer::onDisconnected);
+    }
+}
+
+void HttpServer::onReadyRead()
+{
+    QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
+    if (!socket) return;
+
+    QByteArray data = socket->readAll();
+    HttpRequest request;
+
+    if (!parseRequest(data, request)) {
+        HttpResponse response;
+        response.setError(400, "Bad Request");
+        socket->write(response.toBytes());
+        socket->close();
+        return;
+    }
+
+    handleRequest(socket, request);
+}
+
+void HttpServer::onDisconnected()
+{
+    QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
+    if (socket) {
+        socket->deleteLater();
+    }
+}
+
+bool HttpServer::parseRequest(const QByteArray &data, HttpRequest &request)
+{
+    QString str = QString::fromUtf8(data);
+    QStringList lines = str.split("\r\n");
+
+    if (lines.isEmpty()) return false;
+
+    // Parse request line: METHOD /path HTTP/1.1
+    QStringList requestLine = lines[0].split(' ');
+    if (requestLine.size() < 2) return false;
+
+    request.method = requestLine[0];
+    QString fullPath = requestLine[1];
+
+    // Split path and query
+    int queryIdx = fullPath.indexOf('?');
+    if (queryIdx != -1) {
+        request.path = fullPath.left(queryIdx);
+        request.query = fullPath.mid(queryIdx + 1);
+    } else {
+        request.path = fullPath;
+    }
+
+    // Parse headers
+    int i = 1;
+    for (; i < lines.size() && !lines[i].isEmpty(); ++i) {
+        int colonIdx = lines[i].indexOf(':');
+        if (colonIdx > 0) {
+            QString key = lines[i].left(colonIdx).trimmed().toLower();
+            QString value = lines[i].mid(colonIdx + 1).trimmed();
+            request.headers[key] = value;
+        }
+    }
+
+    // Body is after empty line
+    if (i + 1 < lines.size()) {
+        request.body = lines.mid(i + 1).join("\r\n").toUtf8();
+    }
+
+    return true;
+}
+
+void HttpServer::handleRequest(QTcpSocket *socket, const HttpRequest &request)
+{
+    emit requestReceived(request.method, request.path);
+    qCDebug(lcHttp) << request.method << request.path;
+
+    HttpResponse response;
+    response.headers["Access-Control-Allow-Origin"] = "*";
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS";
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type";
+
+    // Handle CORS preflight
+    if (request.method == "OPTIONS") {
+        response.statusCode = 204;
+        response.statusText = "No Content";
+        socket->write(response.toBytes());
+        socket->close();
+        return;
+    }
+
+    // Route the request
+    RouteHandler handler = nullptr;
+
+    if (request.method == "GET") {
+        handler = m_getRoutes.value(request.path);
+    } else if (request.method == "POST") {
+        handler = m_postRoutes.value(request.path);
+    } else if (request.method == "PUT") {
+        // Check for state change pattern: /api/v1/machine/state/:newState
+        if (request.path.startsWith("/api/v1/machine/state/")) {
+            handleSetMachineState(request, response);
+            socket->write(response.toBytes());
+            socket->close();
+            return;
+        }
+        handler = m_putRoutes.value(request.path);
+    }
+
+    if (handler) {
+        handler(request, response);
+    } else {
+        response.setError(404, "Not Found");
+    }
+
+    socket->write(response.toBytes());
+    socket->close();
+}
+
+// Response helpers
+void HttpServer::HttpResponse::setJson(const QByteArray &json)
+{
+    headers["Content-Type"] = "application/json";
+    body = json;
+}
+
+void HttpServer::HttpResponse::setError(int code, const QString &message)
+{
+    statusCode = code;
+    statusText = message;
+    QJsonObject obj;
+    obj["error"] = message;
+    setJson(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+QByteArray HttpServer::HttpResponse::toBytes() const
+{
+    QByteArray result;
+    result += QString("HTTP/1.1 %1 %2\r\n").arg(statusCode).arg(statusText).toUtf8();
+    for (auto it = headers.begin(); it != headers.end(); ++it) {
+        result += QString("%1: %2\r\n").arg(it.key(), it.value()).toUtf8();
+    }
+    result += QString("Content-Length: %1\r\n").arg(body.size()).toUtf8();
+    result += "\r\n";
+    result += body;
+    return result;
+}
+
+// Route handlers - Devices
+void HttpServer::handleGetDevices(const HttpRequest &, HttpResponse &res)
+{
+    QJsonArray devices;
+
+    // Add DE1 if connected
+    if (m_bridge->de1() && m_bridge->de1()->isConnected()) {
+        QJsonObject de1;
+        de1["name"] = m_bridge->de1()->name();
+        de1["id"] = m_bridge->de1()->address();
+        de1["state"] = "connected";
+        de1["type"] = "machine";
+        devices.append(de1);
+    }
+
+    // Add scale if connected
+    if (m_bridge->scale() && m_bridge->scale()->isConnected()) {
+        QJsonObject scale;
+        scale["name"] = m_bridge->scale()->name();
+        scale["type"] = "scale";
+        scale["scaleType"] = m_bridge->scale()->type();
+        scale["state"] = "connected";
+        scale["weight"] = m_bridge->scale()->weight();
+        devices.append(scale);
+    }
+
+    res.setJson(QJsonDocument(devices).toJson(QJsonDocument::Compact));
+}
+
+void HttpServer::handleScanDevices(const HttpRequest &req, HttpResponse &res)
+{
+    QUrlQuery query(req.query);
+    bool quick = query.queryItemValue("quick") == "true";
+
+    m_bridge->bleManager()->startScan();
+
+    if (quick) {
+        res.setJson("[]");
+    } else {
+        // TODO: Wait for scan results
+        res.setJson("[]");
+    }
+}
+
+void HttpServer::handleConnectDevice(const HttpRequest &req, HttpResponse &res)
+{
+    QUrlQuery query(req.query);
+    QString deviceId = query.queryItemValue("deviceId");
+
+    if (deviceId.isEmpty()) {
+        res.setError(400, "deviceId required");
+        return;
+    }
+
+    // Find the device in discovered devices and connect
+    auto devices = m_bridge->bleManager()->discoveredDevices();
+    for (const auto &device : devices) {
+        if (device.address().toString() == deviceId) {
+            // This is a scale - emit signal to bridge to connect
+            emit m_bridge->bleManager()->scaleDiscovered(device);
+            res.setJson("{}");
+            return;
+        }
+    }
+
+    res.setError(404, "Device not found");
+}
+
+void HttpServer::handleGetDiscoveredDevices(const HttpRequest &, HttpResponse &res)
+{
+    QJsonArray devices;
+
+    auto discovered = m_bridge->bleManager()->discoveredDevices();
+    for (const auto &device : discovered) {
+        QJsonObject obj;
+        obj["name"] = device.name();
+        obj["address"] = device.address().toString();
+
+        // Check if it's a scale or DE1
+        QString name = device.name();
+        if (name.startsWith("DE1") || name.contains("Decent", Qt::CaseInsensitive)) {
+            obj["type"] = "machine";
+            obj["scaleType"] = "";
+        } else {
+            // Determine scale type
+            QString scaleType;
+            if (name.startsWith("Decent Scale")) scaleType = "Decent";
+            else if (name.startsWith("ACAIA") || name.startsWith("PROCH")) scaleType = "Acaia";
+            else if (name.startsWith("PYXIS")) scaleType = "Acaia Pyxis";
+            else if (name.startsWith("FELICITA")) scaleType = "Felicita";
+            else if (name.startsWith("Skale")) scaleType = "Skale";
+            else if (name.startsWith("BOOKOO")) scaleType = "Bookoo";
+            else if (name.startsWith("EUREKA")) scaleType = "Eureka";
+            else if (name.startsWith("DiFluid")) scaleType = "DiFluid";
+            else if (name.startsWith("Hiroia") || name.startsWith("JIMMY")) scaleType = "Hiroia";
+            else if (name.startsWith("VARIA")) scaleType = "Varia";
+            else if (name.startsWith("SmartChef")) scaleType = "SmartChef";
+            else scaleType = "unknown";
+
+            obj["type"] = scaleType.isEmpty() || scaleType == "unknown" ? "unknown" : "scale";
+            obj["scaleType"] = scaleType;
+        }
+
+        devices.append(obj);
+    }
+
+    res.setJson(QJsonDocument(devices).toJson(QJsonDocument::Compact));
+}
+
+// Route handlers - Machine
+void HttpServer::handleGetMachineInfo(const HttpRequest &, HttpResponse &res)
+{
+    if (!m_bridge->de1() || !m_bridge->de1()->isConnected()) {
+        res.setError(503, "DE1 not connected");
+        return;
+    }
+
+    QJsonObject info;
+    info["version"] = m_bridge->de1()->firmwareVersion();
+    info["model"] = m_bridge->de1()->modelName();
+    info["serialNumber"] = m_bridge->de1()->serialNumber();
+    info["GHC"] = m_bridge->de1()->hasGHC();
+
+    res.setJson(QJsonDocument(info).toJson(QJsonDocument::Compact));
+}
+
+void HttpServer::handleGetMachineState(const HttpRequest &, HttpResponse &res)
+{
+    if (!m_bridge->de1() || !m_bridge->de1()->isConnected()) {
+        res.setError(503, "DE1 not connected");
+        return;
+    }
+
+    QJsonObject state;
+    state["timestamp"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+
+    QJsonObject stateObj;
+    stateObj["state"] = m_bridge->de1()->stateString();
+    stateObj["substate"] = m_bridge->de1()->subStateString();
+    state["state"] = stateObj;
+
+    state["pressure"] = m_bridge->de1()->pressure();
+    state["flow"] = m_bridge->de1()->flow();
+    state["mixTemperature"] = m_bridge->de1()->mixTemp();
+    state["groupTemperature"] = m_bridge->de1()->headTemp();
+    state["targetPressure"] = m_bridge->de1()->targetPressure();
+    state["targetFlow"] = m_bridge->de1()->targetFlow();
+    state["steamTemperature"] = m_bridge->de1()->steamTemp();
+
+    res.setJson(QJsonDocument(state).toJson(QJsonDocument::Compact));
+}
+
+void HttpServer::handleSetMachineState(const HttpRequest &req, HttpResponse &res)
+{
+    if (!m_bridge->de1() || !m_bridge->de1()->isConnected()) {
+        res.setError(503, "DE1 not connected");
+        return;
+    }
+
+    // Extract state from path: /api/v1/machine/state/{newState}
+    QString newState = req.path.section('/', -1);
+
+    if (!m_bridge->de1()->requestState(newState)) {
+        res.setError(400, "Invalid state: " + newState);
+        return;
+    }
+
+    res.setJson("{}");
+}
+
+void HttpServer::handlePostProfile(const HttpRequest &req, HttpResponse &res)
+{
+    if (!m_bridge->de1() || !m_bridge->de1()->isConnected()) {
+        res.setError(503, "DE1 not connected");
+        return;
+    }
+
+    QJsonParseError error;
+    QJsonDocument doc = QJsonDocument::fromJson(req.body, &error);
+    if (error.error != QJsonParseError::NoError) {
+        res.setError(400, "Invalid JSON: " + error.errorString());
+        return;
+    }
+
+    // TODO: Parse and upload profile
+    // m_bridge->de1()->setProfile(profile);
+
+    res.setJson("{}");
+}
+
+void HttpServer::handleGetMachineSettings(const HttpRequest &, HttpResponse &res)
+{
+    if (!m_bridge->de1() || !m_bridge->de1()->isConnected()) {
+        res.setError(503, "DE1 not connected");
+        return;
+    }
+
+    QJsonObject settings;
+    settings["usb"] = m_bridge->de1()->usbChargerEnabled();
+    settings["fan"] = m_bridge->de1()->fanThreshold();
+    // TODO: Add more settings
+
+    res.setJson(QJsonDocument(settings).toJson(QJsonDocument::Compact));
+}
+
+void HttpServer::handlePostMachineSettings(const HttpRequest &req, HttpResponse &res)
+{
+    if (!m_bridge->de1() || !m_bridge->de1()->isConnected()) {
+        res.setError(503, "DE1 not connected");
+        return;
+    }
+
+    QJsonDocument doc = QJsonDocument::fromJson(req.body);
+    QJsonObject obj = doc.object();
+
+    if (obj.contains("usb")) {
+        m_bridge->de1()->setUsbCharger(obj["usb"].toBool());
+    }
+    if (obj.contains("fan")) {
+        m_bridge->de1()->setFanThreshold(obj["fan"].toInt());
+    }
+
+    res.statusCode = 202;
+    res.statusText = "Accepted";
+    res.setJson("{}");
+}
+
+void HttpServer::handleGetShotSettings(const HttpRequest &, HttpResponse &res)
+{
+    if (!m_bridge->de1() || !m_bridge->de1()->isConnected()) {
+        res.setError(503, "DE1 not connected");
+        return;
+    }
+
+    // TODO: Get shot settings from DE1
+    QJsonObject settings;
+    res.setJson(QJsonDocument(settings).toJson(QJsonDocument::Compact));
+}
+
+void HttpServer::handlePostShotSettings(const HttpRequest &req, HttpResponse &res)
+{
+    if (!m_bridge->de1() || !m_bridge->de1()->isConnected()) {
+        res.setError(503, "DE1 not connected");
+        return;
+    }
+
+    // TODO: Parse and apply shot settings
+    res.setJson("{}");
+}
+
+// Route handlers - Scale
+void HttpServer::handleTareScale(const HttpRequest &, HttpResponse &res)
+{
+    if (!m_bridge->scale() || !m_bridge->scale()->isConnected()) {
+        res.setError(404, "Scale not connected");
+        return;
+    }
+
+    m_bridge->scale()->tare();
+    res.setJson("{}");
+}
+
+// Route handlers - Settings
+void HttpServer::handleGetSettings(const HttpRequest &, HttpResponse &res)
+{
+    // TODO: Return bridge settings
+    QJsonObject settings;
+    res.setJson(QJsonDocument(settings).toJson(QJsonDocument::Compact));
+}
+
+void HttpServer::handlePostSettings(const HttpRequest &, HttpResponse &res)
+{
+    // TODO: Apply bridge settings
+    res.setJson("{}");
+}
+
+// Dashboard HTML page
+void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
+{
+    res.headers["Content-Type"] = "text/html; charset=utf-8";
+    res.body = R"HTML(<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DecentBridge</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            background: linear-gradient(90deg, #00d9ff, #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+        .card h2 {
+            font-size: 1.2em;
+            margin-bottom: 15px;
+            color: #00d9ff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.connected { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+        .status-dot.disconnected { background: #ff4757; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        .metric {
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        .metric .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #fff;
+        }
+        .metric .label {
+            font-size: 0.85em;
+            color: #888;
+            margin-top: 5px;
+        }
+        .metric.highlight .value { color: #00ff88; }
+        .state-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .state-Sleep { background: #4a4a6a; }
+        .state-Idle { background: #2d5a27; }
+        .state-Espresso { background: #8b4513; }
+        .state-Steam { background: #4a6fa5; }
+        .state-HotWater { background: #5a3d7a; }
+        .buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.1s;
+        }
+        button:hover { transform: scale(1.05); }
+        button:active { transform: scale(0.95); }
+        .btn-idle { background: #2d5a27; color: #fff; }
+        .btn-espresso { background: #8b4513; color: #fff; }
+        .btn-steam { background: #4a6fa5; color: #fff; }
+        .btn-water { background: #5a3d7a; color: #fff; }
+        .btn-sleep { background: #4a4a6a; color: #fff; }
+        .btn-tare { background: #00d9ff; color: #000; }
+        .btn-scan { background: #ff9f43; color: #000; }
+        .btn-scan:disabled { background: #666; color: #999; cursor: not-allowed; transform: none; }
+        .scale-section { margin-top: 10px; }
+        #error { color: #ff4757; text-align: center; padding: 10px; }
+        #scan-status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(0,0,0,0.2);
+            display: none;
+        }
+        #scan-status.visible { display: block; }
+        .scale-list { margin-top: 10px; }
+        .scale-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+        }
+        .scale-item button { padding: 8px 16px; }
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #fff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .api-info {
+            font-size: 0.85em;
+            color: #666;
+            text-align: center;
+            margin-top: 30px;
+        }
+        .api-info a { color: #00d9ff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>DecentBridge</h1>
+
+        <div id="error"></div>
+
+        <div class="card" id="machine-card">
+            <h2>
+                <span class="status-dot" id="machine-status"></span>
+                DE1 Espresso Machine
+            </h2>
+            <div style="margin-bottom:15px">
+                <span class="state-badge" id="machine-state">--</span>
+            </div>
+            <div class="grid">
+                <div class="metric highlight">
+                    <div class="value" id="group-temp">--</div>
+                    <div class="label">Group Temp</div>
+                </div>
+                <div class="metric">
+                    <div class="value" id="steam-temp">--</div>
+                    <div class="label">Steam Temp</div>
+                </div>
+                <div class="metric">
+                    <div class="value" id="pressure">--</div>
+                    <div class="label">Pressure (bar)</div>
+                </div>
+                <div class="metric">
+                    <div class="value" id="flow">--</div>
+                    <div class="label">Flow (ml/s)</div>
+                </div>
+            </div>
+            <div class="buttons">
+                <button class="btn-idle" onclick="setState('idle')">Idle</button>
+                <button class="btn-espresso" onclick="setState('espresso')">Espresso</button>
+                <button class="btn-steam" onclick="setState('steam')">Steam</button>
+                <button class="btn-water" onclick="setState('water')">Hot Water</button>
+                <button class="btn-sleep" onclick="setState('sleep')">Sleep</button>
+            </div>
+        </div>
+
+        <div class="card" id="scale-card">
+            <h2>
+                <span class="status-dot" id="scale-status"></span>
+                Scale
+                <span id="scale-name" style="font-weight:normal;color:#888"></span>
+            </h2>
+            <div class="grid scale-section" id="scale-metrics">
+                <div class="metric highlight">
+                    <div class="value" id="weight">--</div>
+                    <div class="label">Weight (g)</div>
+                </div>
+                <div class="metric">
+                    <div class="value" id="weight-flow">--</div>
+                    <div class="label">Flow (g/s)</div>
+                </div>
+            </div>
+            <div class="buttons">
+                <button class="btn-tare" onclick="tareScale()" id="btn-tare">Tare</button>
+                <button class="btn-scan" onclick="scanForScales()" id="btn-scan">Scan for Scale</button>
+            </div>
+            <div id="scan-status"></div>
+            <div id="scale-list" class="scale-list"></div>
+        </div>
+
+        <div class="api-info">
+            API: <a href="/api/v1/devices">/api/v1/devices</a> |
+            <a href="/api/v1/machine/state">/api/v1/machine/state</a> |
+            <a href="/api/v1/machine/info">/api/v1/machine/info</a><br>
+            WebSocket: ws://[host]:8081/ws/v1/machine/snapshot
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+
+        async function fetchData() {
+            try {
+                // Fetch devices
+                const devRes = await fetch('/api/v1/devices');
+                const devices = await devRes.json();
+
+                const machine = devices.find(d => d.type === 'machine');
+                const scale = devices.find(d => d.type === 'scale');
+
+                document.getElementById('machine-status').className =
+                    'status-dot ' + (machine ? 'connected' : 'disconnected');
+                document.getElementById('scale-status').className =
+                    'status-dot ' + (scale ? 'connected' : 'disconnected');
+                document.getElementById('scale-name').textContent =
+                    scale ? scale.name : '(not connected)';
+
+                // Update weight from API if scale connected
+                if (scale && scale.weight !== undefined) {
+                    document.getElementById('weight').textContent = scale.weight.toFixed(1);
+                }
+
+                // Fetch machine state
+                if (machine) {
+                    const stateRes = await fetch('/api/v1/machine/state');
+                    const state = await stateRes.json();
+
+                    const stateName = state.state?.state || '--';
+                    document.getElementById('machine-state').textContent = stateName;
+                    document.getElementById('machine-state').className = 'state-badge state-' + stateName;
+                    document.getElementById('group-temp').textContent = Math.round(state.groupTemperature || 0) + '°';
+                    document.getElementById('steam-temp').textContent = Math.round(state.steamTemperature || 0) + '°';
+                    document.getElementById('pressure').textContent = (state.pressure || 0).toFixed(1);
+                    document.getElementById('flow').textContent = (state.flow || 0).toFixed(1);
+                }
+
+                document.getElementById('error').textContent = '';
+            } catch (e) {
+                document.getElementById('error').textContent = 'Connection error: ' + e.message;
+            }
+        }
+
+        function connectWebSocket() {
+            const host = window.location.hostname;
+            ws = new WebSocket('ws://' + host + ':8081/ws/v1/scale/snapshot');
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    document.getElementById('weight').textContent = (data.weight || 0).toFixed(1);
+                    document.getElementById('weight-flow').textContent = (data.weightFlow || 0).toFixed(1);
+                } catch (e) {}
+            };
+
+            ws.onclose = () => setTimeout(connectWebSocket, 2000);
+            ws.onerror = () => ws.close();
+        }
+
+        async function setState(state) {
+            try {
+                await fetch('/api/v1/machine/state/' + state, { method: 'PUT' });
+                setTimeout(fetchData, 500);
+            } catch (e) {
+                document.getElementById('error').textContent = 'Failed to set state: ' + e.message;
+            }
+        }
+
+        async function tareScale() {
+            try {
+                await fetch('/api/v1/scale/tare', { method: 'PUT' });
+            } catch (e) {
+                document.getElementById('error').textContent = 'Failed to tare: ' + e.message;
+            }
+        }
+
+        let scanning = false;
+        let stopScan = false;
+
+        async function scanForScales() {
+            if (scanning) return;
+
+            const btn = document.getElementById('btn-scan');
+            const status = document.getElementById('scan-status');
+            const list = document.getElementById('scale-list');
+
+            scanning = true;
+            stopScan = false;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Scanning...';
+            status.className = 'visible';
+            status.innerHTML = 'Scanning for Bluetooth scales...';
+            list.innerHTML = '';
+
+            try {
+                // Start scan
+                await fetch('/api/v1/devices/scan');
+
+                // Poll for results over 10 seconds
+                let foundScales = [];
+                for (let i = 0; i < 10 && !stopScan; i++) {
+                    await new Promise(r => setTimeout(r, 1000));
+                    if (stopScan) break;
+
+                    status.innerHTML = 'Scanning... ' + (10 - i) + 's remaining';
+
+                    const res = await fetch('/api/v1/devices/discovered');
+                    const devices = await res.json();
+                    foundScales = devices.filter(d => d.type === 'scale');
+
+                    // Update list
+                    if (foundScales.length > 0) {
+                        list.innerHTML = foundScales.map(s =>
+                            '<div class="scale-item">' +
+                            '<span>' + s.name + ' <small style="color:#888">(' + s.scaleType + ')</small></span>' +
+                            '<button class="btn-tare" onclick="connectScale(\'' + s.address + '\')">Connect</button>' +
+                            '</div>'
+                        ).join('');
+                    }
+                }
+
+                if (!stopScan) {
+                    if (foundScales.length === 0) {
+                        status.innerHTML = 'No scales found. Make sure your scale is on and in pairing mode.';
+                    } else {
+                        status.innerHTML = 'Found ' + foundScales.length + ' scale(s). Click Connect to pair.';
+                    }
+                }
+
+            } catch (e) {
+                if (!stopScan) {
+                    status.innerHTML = 'Scan failed: ' + e.message;
+                }
+            } finally {
+                scanning = false;
+                btn.disabled = false;
+                btn.innerHTML = 'Scan for Scale';
+            }
+        }
+
+        function resetScanUI() {
+            const btn = document.getElementById('btn-scan');
+            const status = document.getElementById('scan-status');
+            const list = document.getElementById('scale-list');
+            status.className = '';
+            status.innerHTML = '';
+            list.innerHTML = '';
+            btn.disabled = false;
+            btn.innerHTML = 'Scan for Scale';
+        }
+
+        async function connectScale(address) {
+            // Stop scanning immediately
+            stopScan = true;
+            scanning = false;
+
+            const status = document.getElementById('scan-status');
+            const list = document.getElementById('scale-list');
+            list.innerHTML = '';
+            status.innerHTML = '<span class="spinner"></span>Connecting to scale...';
+
+            try {
+                const res = await fetch('/api/v1/devices/connect?deviceId=' + encodeURIComponent(address), {
+                    method: 'PUT'
+                });
+
+                if (res.ok) {
+                    status.innerHTML = 'Connected!';
+                    setTimeout(() => {
+                        resetScanUI();
+                        fetchData();
+                    }, 1000);
+                } else {
+                    status.innerHTML = 'Failed to connect. Try again.';
+                }
+            } catch (e) {
+                status.innerHTML = 'Connection error: ' + e.message;
+            }
+        }
+
+        // Initial fetch and start polling
+        fetchData();
+        setInterval(fetchData, 1000);
+        connectWebSocket();
+    </script>
+</body>
+</html>
+)HTML";
+}
