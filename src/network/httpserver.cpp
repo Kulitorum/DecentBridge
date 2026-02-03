@@ -787,7 +787,7 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
 </head>
 <body>
     <div class="container">
-        <h1>DecentBridge</h1>
+        <h1>DecentBridge <span style="font-size:0.4em;background:rgba(255,255,255,0.1);padding:0.2em 0.6em;border-radius:1em;vertical-align:middle;">v0.1.0</span></h1>
 
         <div id="error"></div>
 
