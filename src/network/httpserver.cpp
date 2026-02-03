@@ -225,6 +225,7 @@ void HttpServer::handleRequest(QTcpSocket *socket, const HttpRequest &request)
     if (handler) {
         handler(request, response);
     } else {
+        qCWarning(lcHttp) << "No route for:" << request.method << request.path;
         response.setError(404, "Not Found");
     }
 
@@ -1062,7 +1063,9 @@ void HttpServer::handleApiDocs(const HttpRequest &, HttpResponse &res)
 
 void HttpServer::handleApiDocsFile(const HttpRequest &, HttpResponse &res, const QString &filename)
 {
-    QFile file(":/assets/api/" + filename);
+    QString resourcePath = ":/assets/api/" + filename;
+    QFile file(resourcePath);
+    qCInfo(lcHttp) << "Serving API doc file:" << resourcePath << "exists:" << file.exists();
     if (file.open(QIODevice::ReadOnly)) {
         if (filename.endsWith(".yml") || filename.endsWith(".yaml")) {
             res.headers["Content-Type"] = "text/yaml; charset=utf-8";
