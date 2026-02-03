@@ -124,6 +124,14 @@ qt_add_resources(${PROJECT_NAME} "api_docs"
         assets/api/index.html
         assets/api/rest_v1.yml
         assets/api/websocket_v1.yml
+        assets/api/vendor/swagger-ui.css
+        assets/api/vendor/swagger-ui-bundle.js
+        assets/api/vendor/swagger-ui-standalone-preset.js
+        assets/api/vendor/react.production.min.js
+        assets/api/vendor/react-dom.production.min.js
+        assets/api/vendor/asyncapi-standalone.js
+        assets/api/vendor/asyncapi.css
+        assets/api/vendor/js-yaml.min.js
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE

@@ -36,6 +36,15 @@ void HttpServer::setupRoutes()
     m_getRoutes["/api/docs"] = [this](auto& req, auto& res) { handleApiDocs(req, res); };
     m_getRoutes["/api/docs/rest_v1.yml"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "rest_v1.yml"); };
     m_getRoutes["/api/docs/websocket_v1.yml"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "websocket_v1.yml"); };
+    // Vendor files (Swagger UI, AsyncAPI, etc.)
+    m_getRoutes["/api/docs/vendor/swagger-ui.css"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "vendor/swagger-ui.css"); };
+    m_getRoutes["/api/docs/vendor/swagger-ui-bundle.js"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "vendor/swagger-ui-bundle.js"); };
+    m_getRoutes["/api/docs/vendor/swagger-ui-standalone-preset.js"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "vendor/swagger-ui-standalone-preset.js"); };
+    m_getRoutes["/api/docs/vendor/react.production.min.js"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "vendor/react.production.min.js"); };
+    m_getRoutes["/api/docs/vendor/react-dom.production.min.js"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "vendor/react-dom.production.min.js"); };
+    m_getRoutes["/api/docs/vendor/asyncapi-standalone.js"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "vendor/asyncapi-standalone.js"); };
+    m_getRoutes["/api/docs/vendor/asyncapi.css"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "vendor/asyncapi.css"); };
+    m_getRoutes["/api/docs/vendor/js-yaml.min.js"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "vendor/js-yaml.min.js"); };
 
     // GET routes
     m_getRoutes["/api/v1/devices"] = [this](auto& req, auto& res) { handleGetDevices(req, res); };
@@ -1059,6 +1068,10 @@ void HttpServer::handleApiDocsFile(const HttpRequest &, HttpResponse &res, const
             res.headers["Content-Type"] = "text/yaml; charset=utf-8";
         } else if (filename.endsWith(".json")) {
             res.headers["Content-Type"] = "application/json";
+        } else if (filename.endsWith(".js")) {
+            res.headers["Content-Type"] = "application/javascript; charset=utf-8";
+        } else if (filename.endsWith(".css")) {
+            res.headers["Content-Type"] = "text/css; charset=utf-8";
         } else {
             res.headers["Content-Type"] = "text/plain; charset=utf-8";
         }
