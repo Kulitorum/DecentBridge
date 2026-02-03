@@ -1,0 +1,597 @@
+openapi: 3.0.3
+info:
+  title: DecentBridge REST API
+  version: 1.0.0
+  description: |
+    DecentBridge is a BLE-to-HTTP/WebSocket bridge for DE1 espresso machines and compatible scales.
+
+    This API provides endpoints to discover and connect to Bluetooth devices, control the DE1 machine,
+    and interact with connected scales and sensors.
+
+servers:
+  - url: http://{host}:{port}
+    variables:
+      host:
+        default: localhost
+      port:
+        default: "8080"
+
+tags:
+  - name: Devices
+    description: BLE device discovery and connection management
+  - name: Machine
+    description: DE1 espresso machine control and monitoring
+  - name: Scale
+    description: Connected scale operations
+  - name: Sensors
+    description: External sensor data (e.g., pressure sensors)
+  - name: Bridge Settings
+    description: DecentBridge configuration
+
+paths:
+  # ============ Devices ============
+  /api/v1/devices:
+    get:
+      summary: Get connected devices
+      description: Returns a list of currently connected devices (DE1, scales, sensors).
+      tags: [Devices]
+      responses:
+        "200":
+          description: List of connected devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+
+  /api/v1/devices/discovered:
+    get:
+      summary: Get discovered devices
+      description: Returns all BLE devices discovered during scanning, including their type classification.
+      tags: [Devices]
+      responses:
+        "200":
+          description: List of discovered devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DiscoveredDevice"
+
+  /api/v1/devices/scan:
+    get:
+      summary: Start BLE scan
+      description: Triggers a Bluetooth scan for DE1 machines, scales, and sensors.
+      tags: [Devices]
+      parameters:
+        - name: quick
+          in: query
+          description: If true, returns immediately. Otherwise waits for scan results.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Scan started
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DiscoveredDevice"
+
+  /api/v1/devices/connect:
+    put:
+      summary: Connect to a device
+      description: Connects to a previously discovered device by its Bluetooth address.
+      tags: [Devices]
+      parameters:
+        - name: deviceId
+          in: query
+          required: true
+          description: Bluetooth address of the device (e.g., "E6:E7:C0:1E:70:8E")
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Connection initiated
+        "400":
+          description: deviceId required
+        "404":
+          description: Device not found in discovered list
+
+  # ============ Machine ============
+  /api/v1/machine/info:
+    get:
+      summary: Get machine information
+      description: Returns firmware version, model, serial number, and capabilities.
+      tags: [Machine]
+      responses:
+        "200":
+          description: Machine information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineInfo"
+        "503":
+          description: DE1 not connected
+
+  /api/v1/machine/state:
+    get:
+      summary: Get machine state
+      description: Returns current machine state including temperatures, pressure, and flow.
+      tags: [Machine]
+      responses:
+        "200":
+          description: Current machine state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineSnapshot"
+        "503":
+          description: DE1 not connected
+
+  /api/v1/machine/state/{newState}:
+    put:
+      summary: Request state change
+      description: Request the machine to change to a new state (idle, espresso, steam, etc.)
+      tags: [Machine]
+      parameters:
+        - name: newState
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/MachineState"
+      responses:
+        "200":
+          description: State change requested
+        "400":
+          description: Invalid state
+        "503":
+          description: DE1 not connected
+
+  /api/v1/machine/profile:
+    post:
+      summary: Upload profile
+      description: Uploads a brewing profile to the DE1 machine.
+      tags: [Machine]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Profile"
+      responses:
+        "200":
+          description: Profile uploaded
+        "503":
+          description: DE1 not connected
+
+  /api/v1/machine/settings:
+    get:
+      summary: Get machine settings
+      description: Returns current DE1 settings (USB charger, fan threshold, etc.)
+      tags: [Machine]
+      responses:
+        "200":
+          description: Machine settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineSettings"
+        "503":
+          description: DE1 not connected
+    post:
+      summary: Update machine settings
+      description: Update DE1 settings. Only include fields you want to change.
+      tags: [Machine]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MachineSettingsRequest"
+      responses:
+        "202":
+          description: Settings update accepted
+        "503":
+          description: DE1 not connected
+
+  /api/v1/machine/shotSettings:
+    get:
+      summary: Get shot settings
+      description: Returns current shot settings (temperatures, volumes, durations).
+      tags: [Machine]
+      responses:
+        "200":
+          description: Shot settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShotSettings"
+        "503":
+          description: DE1 not connected
+    post:
+      summary: Update shot settings
+      description: Update shot settings on the machine.
+      tags: [Machine]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShotSettings"
+      responses:
+        "200":
+          description: Shot settings updated
+        "503":
+          description: DE1 not connected
+
+  /api/v1/machine/waterLevels:
+    get:
+      summary: Get water levels
+      description: Returns current water tank level and refill threshold.
+      tags: [Machine]
+      responses:
+        "200":
+          description: Water levels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WaterLevels"
+        "503":
+          description: DE1 not connected
+
+  # ============ Scale ============
+  /api/v1/scale/tare:
+    put:
+      summary: Tare scale
+      description: Zeros the connected scale.
+      tags: [Scale]
+      responses:
+        "200":
+          description: Scale tared
+        "404":
+          description: No scale connected
+
+  /api/v1/scale/disconnect:
+    put:
+      summary: Disconnect scale
+      description: Disconnects the currently connected scale.
+      tags: [Scale]
+      responses:
+        "200":
+          description: Scale disconnected
+        "404":
+          description: No scale connected
+
+  # ============ Sensors ============
+  /api/v1/sensors:
+    get:
+      summary: List connected sensors
+      description: Returns all connected sensors and their capabilities.
+      tags: [Sensors]
+      responses:
+        "200":
+          description: List of sensors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SensorInfo"
+
+  /api/v1/sensors/{id}:
+    get:
+      summary: Get sensor details
+      description: Returns detailed information about a specific sensor.
+      tags: [Sensors]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sensor details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SensorInfo"
+        "404":
+          description: Sensor not found
+
+  # ============ Bridge Settings ============
+  /api/v1/settings:
+    get:
+      summary: Get bridge settings
+      description: Returns DecentBridge configuration.
+      tags: [Bridge Settings]
+      responses:
+        "200":
+          description: Bridge settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BridgeSettings"
+    post:
+      summary: Update bridge settings
+      description: Update DecentBridge configuration.
+      tags: [Bridge Settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BridgeSettingsRequest"
+      responses:
+        "200":
+          description: Settings updated
+
+components:
+  schemas:
+    # ============ Device Schemas ============
+    Device:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "DE1"
+        id:
+          type: string
+          description: Bluetooth address
+          example: "FF:FF:EE:1F:B7:54"
+        state:
+          type: string
+          enum: [connected, disconnected]
+        type:
+          type: string
+          enum: [machine, scale, sensor]
+        weight:
+          type: number
+          description: Current weight (only for scales)
+          example: 18.5
+
+    DiscoveredDevice:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "BOOKOO_SC 996698"
+        address:
+          type: string
+          example: "E6:E7:C0:1E:70:8E"
+        type:
+          type: string
+          enum: [machine, scale, sensor, unknown]
+        scaleType:
+          type: string
+          description: Scale manufacturer (if type is scale)
+          example: "Bookoo"
+
+    # ============ Machine Schemas ============
+    MachineInfo:
+      type: object
+      properties:
+        version:
+          type: string
+          description: Firmware version
+          example: "1.56.1234"
+        model:
+          type: string
+          example: "DE1PRO"
+        serialNumber:
+          type: string
+          example: "DE1-12345"
+        GHC:
+          type: boolean
+          description: Group Head Controller present
+
+    MachineSnapshot:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        state:
+          type: object
+          properties:
+            state:
+              $ref: "#/components/schemas/MachineState"
+            substate:
+              $ref: "#/components/schemas/MachineSubstate"
+        pressure:
+          type: number
+          example: 9.0
+        flow:
+          type: number
+          example: 2.5
+        mixTemperature:
+          type: number
+          example: 93.5
+        groupTemperature:
+          type: number
+          example: 92.0
+        steamTemperature:
+          type: number
+          example: 155.0
+        targetPressure:
+          type: number
+        targetFlow:
+          type: number
+
+    MachineState:
+      type: string
+      enum:
+        - Sleep
+        - Idle
+        - Espresso
+        - Steam
+        - HotWater
+        - Flush
+        - Heating
+        - Descaling
+        - Cleaning
+
+    MachineSubstate:
+      type: string
+      enum:
+        - idle
+        - preparingForShot
+        - preinfusion
+        - pouring
+        - pouringDone
+
+    MachineSettings:
+      type: object
+      properties:
+        usb:
+          type: boolean
+          description: USB charger enabled
+        fan:
+          type: integer
+          description: Fan threshold temperature
+
+    MachineSettingsRequest:
+      type: object
+      properties:
+        usb:
+          type: boolean
+        fan:
+          type: integer
+
+    ShotSettings:
+      type: object
+      properties:
+        steamSetting:
+          type: integer
+        targetSteamTemp:
+          type: integer
+        targetSteamDuration:
+          type: integer
+        targetHotWaterTemp:
+          type: integer
+        targetHotWaterVolume:
+          type: integer
+        targetHotWaterDuration:
+          type: integer
+        targetShotVolume:
+          type: integer
+        groupTemp:
+          type: number
+
+    WaterLevels:
+      type: object
+      properties:
+        currentLevel:
+          type: integer
+          description: Current water level (mm)
+        refillLevel:
+          type: integer
+          description: Refill warning threshold (mm)
+
+    Profile:
+      type: object
+      properties:
+        version:
+          type: string
+        title:
+          type: string
+        notes:
+          type: string
+        author:
+          type: string
+        beverage_type:
+          type: string
+        steps:
+          type: array
+          items:
+            type: object
+        target_volume:
+          type: number
+        target_weight:
+          type: number
+        tank_temperature:
+          type: number
+
+    # ============ Scale Schemas ============
+    ScaleSnapshot:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        weight:
+          type: number
+          example: 36.5
+        weightFlow:
+          type: number
+          description: Flow rate in g/s
+          example: 2.1
+        batteryLevel:
+          type: integer
+          example: 85
+
+    # ============ Sensor Schemas ============
+    SensorInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "bookoo_em_123456"
+        name:
+          type: string
+          example: "Bookoo Espresso Monitor"
+        type:
+          type: string
+          example: "pressure"
+        dataChannels:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+                example: "pressure"
+              type:
+                type: string
+                example: "number"
+              unit:
+                type: string
+                example: "bar"
+
+    # ============ Bridge Settings Schemas ============
+    BridgeSettings:
+      type: object
+      properties:
+        httpPort:
+          type: integer
+          example: 8080
+        webSocketPort:
+          type: integer
+          example: 8081
+        autoConnect:
+          type: boolean
+          description: Auto-connect to DE1 when discovered
+        autoConnectScale:
+          type: boolean
+          description: Auto-connect to scales when discovered
+
+    BridgeSettingsRequest:
+      type: object
+      properties:
+        autoConnect:
+          type: boolean
+        autoConnectScale:
+          type: boolean
+
+    # ============ Error Schema ============
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "DE1 not connected"

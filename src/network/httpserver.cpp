@@ -10,6 +10,7 @@
 #include <QJsonArray>
 #include <QLoggingCategory>
 #include <QUrlQuery>
+#include <QFile>
 
 Q_LOGGING_CATEGORY(lcHttp, "bridge.http")
 
@@ -29,6 +30,12 @@ void HttpServer::setupRoutes()
 {
     // Root - HTML dashboard
     m_getRoutes["/"] = [this](auto& req, auto& res) { handleDashboard(req, res); };
+
+    // API Documentation
+    m_getRoutes["/api"] = [this](auto& req, auto& res) { handleApiDocs(req, res); };
+    m_getRoutes["/api/docs"] = [this](auto& req, auto& res) { handleApiDocs(req, res); };
+    m_getRoutes["/api/docs/rest_v1.yml"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "rest_v1.yml"); };
+    m_getRoutes["/api/docs/websocket_v1.yml"] = [this](auto& req, auto& res) { handleApiDocsFile(req, res, "websocket_v1.yml"); };
 
     // GET routes
     m_getRoutes["/api/v1/devices"] = [this](auto& req, auto& res) { handleGetDevices(req, res); };
@@ -746,10 +753,8 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
         </div>
 
         <div class="api-info">
-            API: <a href="/api/v1/devices">/api/v1/devices</a> |
-            <a href="/api/v1/machine/state">/api/v1/machine/state</a> |
-            <a href="/api/v1/machine/info">/api/v1/machine/info</a><br>
-            WebSocket: ws://[host]:8081/ws/v1/machine/snapshot
+            <a href="/api/docs" style="font-weight:bold;">API Documentation</a><br>
+            WebSocket: ws://[host]:8081/ws/v1/scale/snapshot
         </div>
     </div>
 
@@ -973,4 +978,33 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
 </body>
 </html>
 )HTML";
+}
+
+// API Documentation
+void HttpServer::handleApiDocs(const HttpRequest &, HttpResponse &res)
+{
+    QFile file(":/assets/api/index.html");
+    if (file.open(QIODevice::ReadOnly)) {
+        res.headers["Content-Type"] = "text/html; charset=utf-8";
+        res.body = file.readAll();
+    } else {
+        res.setError(404, "API docs not found");
+    }
+}
+
+void HttpServer::handleApiDocsFile(const HttpRequest &, HttpResponse &res, const QString &filename)
+{
+    QFile file(":/assets/api/" + filename);
+    if (file.open(QIODevice::ReadOnly)) {
+        if (filename.endsWith(".yml") || filename.endsWith(".yaml")) {
+            res.headers["Content-Type"] = "text/yaml; charset=utf-8";
+        } else if (filename.endsWith(".json")) {
+            res.headers["Content-Type"] = "application/json";
+        } else {
+            res.headers["Content-Type"] = "text/plain; charset=utf-8";
+        }
+        res.body = file.readAll();
+    } else {
+        res.setError(404, "File not found: " + filename);
+    }
 }

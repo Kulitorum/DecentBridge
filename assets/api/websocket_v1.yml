@@ -1,0 +1,249 @@
+asyncapi: 3.0.0
+info:
+  title: DecentBridge WebSocket API
+  version: 1.0.0
+  description: |
+    WebSocket channels for real-time data streaming from DecentBridge.
+
+    All channels emit JSON messages to connected clients. Connect to the WebSocket
+    server (default port 8081) and subscribe to the channels you need.
+
+servers:
+  default:
+    host: '{host}:{port}'
+    protocol: ws
+    description: DecentBridge WebSocket server
+    variables:
+      host:
+        default: localhost
+      port:
+        default: "8081"
+
+channels:
+  MachineSnapshot:
+    address: ws/v1/machine/snapshot
+    description: |
+      Real-time machine state updates (~10Hz during shots).
+      Includes temperatures, pressure, flow, and state information.
+    messages:
+      machineSnapshot:
+        $ref: '#/components/messages/MachineSnapshot'
+
+  ScaleSnapshot:
+    address: ws/v1/scale/snapshot
+    description: |
+      Real-time weight and flow data from connected scale.
+      Updates at scale's native rate (typically 10-20Hz).
+    messages:
+      scaleSnapshot:
+        $ref: '#/components/messages/ScaleSnapshot'
+
+  WaterLevels:
+    address: ws/v1/machine/waterLevels
+    description: Water level updates from the DE1 tank sensor.
+    messages:
+      waterLevels:
+        $ref: '#/components/messages/WaterLevels'
+
+  ShotSettings:
+    address: ws/v1/machine/shotSettings
+    description: Shot settings updates when changed on the machine.
+    messages:
+      shotSettings:
+        $ref: '#/components/messages/ShotSettings'
+
+  SensorSnapshot:
+    address: ws/v1/sensors/{id}/snapshot
+    description: Real-time data from a specific sensor.
+    parameters:
+      id:
+        description: Sensor identifier
+    messages:
+      sensorSnapshot:
+        $ref: '#/components/messages/SensorSnapshot'
+
+operations:
+  receiveMachineSnapshot:
+    action: receive
+    channel:
+      $ref: '#/channels/MachineSnapshot'
+    summary: Receive machine state updates
+
+  receiveScaleSnapshot:
+    action: receive
+    channel:
+      $ref: '#/channels/ScaleSnapshot'
+    summary: Receive scale weight updates
+
+  receiveWaterLevels:
+    action: receive
+    channel:
+      $ref: '#/channels/WaterLevels'
+    summary: Receive water level updates
+
+  receiveShotSettings:
+    action: receive
+    channel:
+      $ref: '#/channels/ShotSettings'
+    summary: Receive shot settings updates
+
+  receiveSensorSnapshot:
+    action: receive
+    channel:
+      $ref: '#/channels/SensorSnapshot'
+    summary: Receive sensor data updates
+
+components:
+  messages:
+    MachineSnapshot:
+      name: MachineSnapshot
+      title: Machine State Snapshot
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MachineSnapshot'
+
+    ScaleSnapshot:
+      name: ScaleSnapshot
+      title: Scale Weight Snapshot
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ScaleSnapshot'
+
+    WaterLevels:
+      name: WaterLevels
+      title: Water Level Update
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WaterLevels'
+
+    ShotSettings:
+      name: ShotSettings
+      title: Shot Settings Update
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ShotSettings'
+
+    SensorSnapshot:
+      name: SensorSnapshot
+      title: Sensor Data Snapshot
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SensorSnapshot'
+
+  schemas:
+    MachineSnapshot:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp
+        state:
+          type: object
+          properties:
+            state:
+              type: string
+              enum: [Sleep, Idle, Espresso, Steam, HotWater, Flush, Heating, Descaling, Cleaning]
+              example: Espresso
+            substate:
+              type: string
+              enum: [idle, preparingForShot, preinfusion, pouring, pouringDone]
+              example: pouring
+        pressure:
+          type: number
+          description: Current pressure in bar
+          example: 9.0
+        flow:
+          type: number
+          description: Current flow in ml/s
+          example: 2.5
+        targetPressure:
+          type: number
+          description: Target pressure from profile
+        targetFlow:
+          type: number
+          description: Target flow from profile
+        mixTemperature:
+          type: number
+          description: Mix/water temperature in Celsius
+          example: 93.5
+        groupTemperature:
+          type: number
+          description: Group head temperature in Celsius
+          example: 92.0
+        steamTemperature:
+          type: number
+          description: Steam boiler temperature in Celsius
+          example: 155.0
+        profileFrame:
+          type: integer
+          description: Current profile step index
+
+    ScaleSnapshot:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        weight:
+          type: number
+          description: Current weight in grams
+          example: 36.5
+        weightFlow:
+          type: number
+          description: Weight change rate in g/s
+          example: 2.1
+        batteryLevel:
+          type: integer
+          description: Battery percentage (if available)
+          example: 85
+
+    WaterLevels:
+      type: object
+      properties:
+        currentLevel:
+          type: integer
+          description: Current water level in mm
+          example: 85
+        refillLevel:
+          type: integer
+          description: Refill warning threshold in mm
+          example: 20
+
+    ShotSettings:
+      type: object
+      properties:
+        steamSetting:
+          type: integer
+        targetSteamTemp:
+          type: number
+        targetSteamDuration:
+          type: integer
+        targetHotWaterTemp:
+          type: number
+        targetHotWaterVolume:
+          type: number
+        targetHotWaterDuration:
+          type: integer
+        targetShotVolume:
+          type: number
+        groupTemp:
+          type: number
+
+    SensorSnapshot:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        id:
+          type: string
+          description: Sensor identifier
+          example: "bookoo_em_123456"
+        values:
+          type: object
+          description: Key-value pairs of sensor readings
+          additionalProperties: true
+          example:
+            pressure: 9.2
+            temperature: 93.5

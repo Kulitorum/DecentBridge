@@ -117,6 +117,15 @@ list(APPEND HEADERS
 # Create executable (qt_add_executable handles Android APK generation)
 qt_add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
+# Add resources (API documentation)
+qt_add_resources(${PROJECT_NAME} "api_docs"
+    PREFIX "/"
+    FILES
+        assets/api/index.html
+        assets/api/rest_v1.yml
+        assets/api/websocket_v1.yml
+)
+
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )

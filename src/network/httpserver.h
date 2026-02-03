@@ -12,20 +12,8 @@ class Bridge;
 /**
  * @brief Lightweight HTTP REST server
  *
- * Implements the REA API specification for DE1 control.
- * Endpoints:
- *   GET  /api/v1/devices          - List available devices
- *   GET  /api/v1/devices/scan     - Trigger device scan
- *   PUT  /api/v1/devices/connect  - Connect to a device
- *   GET  /api/v1/machine/info     - Get machine info
- *   GET  /api/v1/machine/state    - Get current state
- *   PUT  /api/v1/machine/state/:s - Request state change
- *   POST /api/v1/machine/profile  - Upload profile
- *   GET  /api/v1/machine/settings - Get machine settings
- *   POST /api/v1/machine/settings - Set machine settings
- *   PUT  /api/v1/scale/tare       - Tare scale
- *   GET  /api/v1/settings         - Get bridge settings
- *   POST /api/v1/settings         - Set bridge settings
+ * Provides REST API for DE1 espresso machine control and scale interaction.
+ * See /api/docs for interactive API documentation (Swagger UI).
  */
 class HttpServer : public QObject
 {
@@ -100,6 +88,10 @@ private:
 
     // Dashboard
     void handleDashboard(const HttpRequest &req, HttpResponse &res);
+
+    // API Documentation
+    void handleApiDocs(const HttpRequest &req, HttpResponse &res);
+    void handleApiDocsFile(const HttpRequest &req, HttpResponse &res, const QString &filename);
 
     Bridge *m_bridge;
     QTcpServer *m_server = nullptr;
