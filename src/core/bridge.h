@@ -9,6 +9,7 @@ class Settings;
 class BLEManager;
 class DE1Device;
 class ScaleDevice;
+class SensorDevice;
 class HttpServer;
 class WebSocketServer;
 
@@ -36,10 +37,16 @@ public:
     ScaleDevice *scale() const { return m_scale; }
     BLEManager *bleManager() const { return m_bleManager.get(); }
     Settings *settings() const { return m_settings; }
+    QList<SensorDevice*> sensors() const { return m_sensors; }
+    SensorDevice* sensor(const QString &id) const;
 
     // Scale control
     void disconnectScale();
     void connectToScale(const QBluetoothDeviceInfo &device);
+
+    // Sensor control
+    void connectToSensor(const QBluetoothDeviceInfo &device);
+    void disconnectSensor(const QString &id);
 
 signals:
     void started();
@@ -51,12 +58,19 @@ signals:
     void de1Disconnected();
     void scaleConnected();
     void scaleDisconnected();
+    void sensorConnected(SensorDevice *sensor);
+    void sensorDisconnected(const QString &id);
+    void sensorDataUpdated(const QString &id, const QJsonObject &data);
 
 private slots:
     void onDe1Discovered(const QBluetoothDeviceInfo &device);
     void onScaleDiscovered(const QBluetoothDeviceInfo &device);
+    void onSensorDiscovered(const QBluetoothDeviceInfo &device);
     void onDe1ConnectionChanged(bool connected);
     void onScaleConnectionChanged(bool connected);
+    void onSensorConnected();
+    void onSensorDisconnected();
+    void onSensorDataUpdated(const QJsonObject &data);
 
 private:
     void setupConnections();
@@ -65,6 +79,7 @@ private:
     std::unique_ptr<BLEManager> m_bleManager;
     std::unique_ptr<DE1Device> m_de1;
     ScaleDevice *m_scale = nullptr; // Owned by factory
+    QList<SensorDevice*> m_sensors;
     std::unique_ptr<HttpServer> m_httpServer;
     std::unique_ptr<WebSocketServer> m_wsServer;
 

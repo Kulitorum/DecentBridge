@@ -4,6 +4,7 @@
 #include "ble/blemanager.h"
 #include "ble/de1device.h"
 #include "ble/scaledevice.h"
+#include "ble/sensordevice.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -305,13 +306,12 @@ void HttpServer::handleScanDevices(const HttpRequest &req, HttpResponse &res)
     QUrlQuery query(req.query);
     bool quick = query.queryItemValue("quick") == "true";
 
-    qCInfo(lcHttp) << "Scan requested, quick=" << quick;
     m_bridge->bleManager()->startScan();
 
     if (quick) {
         res.setJson("[]");
     } else {
-        // TODO: Wait for scan results
+        // Returns immediately - poll /devices/discovered for results
         res.setJson("[]");
     }
 }
@@ -321,33 +321,29 @@ void HttpServer::handleConnectDevice(const HttpRequest &req, HttpResponse &res)
     QUrlQuery query(req.query);
     QString deviceId = query.queryItemValue("deviceId", QUrl::FullyDecoded);
 
-    qCInfo(lcHttp) << "Connect request for deviceId:" << deviceId;
-
     if (deviceId.isEmpty()) {
-        qCWarning(lcHttp) << "Connect failed: deviceId required";
         res.setError(400, "deviceId required");
         return;
     }
 
     // Find the device in discovered devices and connect
     auto devices = m_bridge->bleManager()->discoveredDevices();
-    qCInfo(lcHttp) << "Searching" << devices.size() << "discovered devices";
 
     for (const auto &device : devices) {
         QString addr = device.address().toString();
         if (addr == deviceId) {
-            qCInfo(lcHttp) << "Found device, connecting to:" << device.name() << addr;
-            m_bridge->connectToScale(device);
+            qCInfo(lcHttp) << "Connecting to:" << device.name();
+            // Determine device type and connect appropriately
+            if (m_bridge->bleManager()->isScale(device)) {
+                m_bridge->connectToScale(device);
+            } else if (m_bridge->bleManager()->isSensor(device)) {
+                m_bridge->connectToSensor(device);
+            }
             res.setJson("{}");
             return;
         }
     }
 
-    qCWarning(lcHttp) << "Device not found:" << deviceId;
-    qCWarning(lcHttp) << "Available devices:";
-    for (const auto &device : devices) {
-        qCWarning(lcHttp) << "  -" << device.name() << device.address().toString();
-    }
     res.setError(404, "Device not found");
 }
 
@@ -356,9 +352,9 @@ void HttpServer::handleGetDiscoveredDevices(const HttpRequest &, HttpResponse &r
     QJsonArray devices;
 
     auto discovered = m_bridge->bleManager()->discoveredDevices();
-    qCInfo(lcHttp) << "GET /discovered - found" << discovered.size() << "devices";
 
     int scaleCount = 0;
+    int sensorCount = 0;
     for (const auto &device : discovered) {
         QJsonObject obj;
         obj["name"] = device.name();
@@ -366,22 +362,26 @@ void HttpServer::handleGetDiscoveredDevices(const HttpRequest &, HttpResponse &r
 
         // Use BLEManager's detection logic for consistency
         QString scaleType = m_bridge->bleManager()->scaleType(device);
+        QString sensorType = m_bridge->bleManager()->sensorType(device);
+
         if (!scaleType.isEmpty()) {
             obj["type"] = "scale";
             obj["scaleType"] = scaleType;
             scaleCount++;
+        } else if (!sensorType.isEmpty()) {
+            obj["type"] = "sensor";
+            obj["sensorType"] = sensorType;
+            sensorCount++;
         } else if (m_bridge->bleManager()->isDE1(device)) {
             obj["type"] = "machine";
-            obj["scaleType"] = "";
         } else {
             obj["type"] = "unknown";
-            obj["scaleType"] = "";
         }
 
         devices.append(obj);
     }
 
-    qCInfo(lcHttp) << "Returning" << devices.size() << "devices," << scaleCount << "scales";
+    qCDebug(lcHttp) << "Discovered:" << devices.size() << "devices," << scaleCount << "scales," << sensorCount << "sensors";
     res.setJson(QJsonDocument(devices).toJson(QJsonDocument::Compact));
 }
 
@@ -559,17 +559,24 @@ void HttpServer::handleGetWaterLevels(const HttpRequest &, HttpResponse &res)
 // Route handlers - Sensors
 void HttpServer::handleGetSensors(const HttpRequest &, HttpResponse &res)
 {
-    // Sensors are not yet implemented in DecentBridge
-    // Return empty array for now
     QJsonArray sensors;
+    for (auto sensor : m_bridge->sensors()) {
+        if (sensor->isConnected()) {
+            sensors.append(sensor->toJson());
+        }
+    }
     res.setJson(QJsonDocument(sensors).toJson(QJsonDocument::Compact));
 }
 
 void HttpServer::handleGetSensorById(const HttpRequest &, HttpResponse &res, const QString &id)
 {
-    Q_UNUSED(id)
-    // Sensors are not yet implemented
-    res.setError(404, "Sensor not found");
+    auto sensor = m_bridge->sensor(id);
+    if (!sensor || !sensor->isConnected()) {
+        res.setError(404, "Sensor not found");
+        return;
+    }
+
+    res.setJson(QJsonDocument(sensor->toJson()).toJson(QJsonDocument::Compact));
 }
 
 // Route handlers - Scale
@@ -1083,7 +1090,6 @@ void HttpServer::handleApiDocsFile(const HttpRequest &, HttpResponse &res, const
 {
     QString resourcePath = ":/assets/api/" + filename;
     QFile file(resourcePath);
-    qCInfo(lcHttp) << "Serving API doc file:" << resourcePath << "exists:" << file.exists();
     if (file.open(QIODevice::ReadOnly)) {
         if (filename.endsWith(".yml") || filename.endsWith(".yaml")) {
             res.headers["Content-Type"] = "text/yaml; charset=utf-8";

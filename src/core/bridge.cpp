@@ -3,7 +3,9 @@
 #include "ble/blemanager.h"
 #include "ble/de1device.h"
 #include "ble/scaledevice.h"
+#include "ble/sensordevice.h"
 #include "ble/scales/scalefactory.h"
+#include "ble/sensors/sensorfactory.h"
 #include "network/httpserver.h"
 #include "network/websocketserver.h"
 
@@ -35,6 +37,8 @@ void Bridge::setupConnections()
             this, &Bridge::onDe1Discovered);
     connect(m_bleManager.get(), &BLEManager::scaleDiscovered,
             this, &Bridge::onScaleDiscovered);
+    connect(m_bleManager.get(), &BLEManager::sensorDiscovered,
+            this, &Bridge::onSensorDiscovered);
 
     // DE1 -> Bridge
     connect(m_de1.get(), &DE1Device::connectedChanged,
@@ -92,6 +96,13 @@ void Bridge::stop()
         delete m_scale;
         m_scale = nullptr;
     }
+
+    // Disconnect all sensors
+    for (auto sensor : m_sensors) {
+        sensor->disconnect();
+        delete sensor;
+    }
+    m_sensors.clear();
 
     m_httpServer->stop();
     m_wsServer->stop();
@@ -229,5 +240,96 @@ void Bridge::disconnectScale()
         m_scale->disconnect();
         m_scale->deleteLater();
         m_scale = nullptr;
+    }
+}
+
+// Sensor methods
+SensorDevice* Bridge::sensor(const QString &id) const
+{
+    for (auto sensor : m_sensors) {
+        if (sensor->id() == id) {
+            return sensor;
+        }
+    }
+    return nullptr;
+}
+
+void Bridge::onSensorDiscovered(const QBluetoothDeviceInfo &device)
+{
+    // Auto-connect to sensors when discovered
+    connectToSensor(device);
+}
+
+void Bridge::connectToSensor(const QBluetoothDeviceInfo &device)
+{
+    // Check if already connected to this sensor
+    QString address = device.address().toString();
+    for (auto sensor : m_sensors) {
+        if (sensor->address() == address) {
+            qCInfo(lcBridge) << "Sensor already connected:" << device.name();
+            return;
+        }
+    }
+
+    auto sensor = SensorFactory::createSensor(device, this);
+    if (!sensor) {
+        qCWarning(lcBridge) << "Unknown sensor type:" << device.name();
+        return;
+    }
+
+    qCInfo(lcBridge) << "Connecting to sensor:" << device.name();
+
+    connect(sensor, &SensorDevice::connected, this, &Bridge::onSensorConnected);
+    connect(sensor, &SensorDevice::disconnected, this, &Bridge::onSensorDisconnected);
+    connect(sensor, &SensorDevice::dataUpdated, this, &Bridge::onSensorDataUpdated);
+
+    m_sensors.append(sensor);
+    sensor->connectToDevice(device);
+}
+
+void Bridge::disconnectSensor(const QString &id)
+{
+    for (int i = 0; i < m_sensors.size(); ++i) {
+        if (m_sensors[i]->id() == id) {
+            qCInfo(lcBridge) << "Disconnecting sensor:" << m_sensors[i]->name();
+            m_sensors[i]->disconnect();
+            m_sensors[i]->deleteLater();
+            m_sensors.removeAt(i);
+            emit sensorDisconnected(id);
+            return;
+        }
+    }
+}
+
+void Bridge::onSensorConnected()
+{
+    auto sensor = qobject_cast<SensorDevice*>(sender());
+    if (sensor) {
+        qCInfo(lcBridge) << "Sensor connected:" << sensor->name();
+        emit sensorConnected(sensor);
+    }
+}
+
+void Bridge::onSensorDisconnected()
+{
+    auto sensor = qobject_cast<SensorDevice*>(sender());
+    if (sensor) {
+        QString id = sensor->id();
+        qCInfo(lcBridge) << "Sensor disconnected:" << sensor->name();
+
+        // Remove from list
+        m_sensors.removeAll(sensor);
+        sensor->deleteLater();
+
+        emit sensorDisconnected(id);
+    }
+}
+
+void Bridge::onSensorDataUpdated(const QJsonObject &data)
+{
+    auto sensor = qobject_cast<SensorDevice*>(sender());
+    if (sensor) {
+        emit sensorDataUpdated(sensor->id(), data);
+        m_wsServer->broadcastSensorData(sensor->id(), data);
     }
 }

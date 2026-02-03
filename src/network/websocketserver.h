@@ -41,6 +41,7 @@ public slots:
     void broadcastWaterLevels(const QJsonObject &levels);
     void broadcastScaleWeight(double weight, double flow);
     void broadcastShotSettings(const QJsonObject &settings);
+    void broadcastSensorData(const QString &sensorId, const QJsonObject &data);
 
 private slots:
     void onNewConnection();
@@ -54,11 +55,16 @@ private:
         ShotSettings,
         WaterLevels,
         ScaleSnapshot,
+        SensorSnapshot,
         Raw
     };
 
     Channel channelFromPath(const QString &path);
     void broadcast(Channel channel, const QByteArray &data);
+    void broadcastToSensor(const QString &sensorId, const QByteArray &data);
+
+    // Sensor subscribers: sensor ID -> set of sockets
+    QMap<QString, QSet<QWebSocket*>> m_sensorSubscribers;
 
     Bridge *m_bridge;
     QWebSocketServer *m_server = nullptr;

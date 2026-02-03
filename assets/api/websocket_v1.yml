@@ -8,17 +8,6 @@ info:
     All channels emit JSON messages to connected clients. Connect to the WebSocket
     server (default port 8081) and subscribe to the channels you need.
 
-servers:
-  default:
-    host: '{host}:{port}'
-    protocol: ws
-    description: DecentBridge WebSocket server
-    variables:
-      host:
-        default: localhost
-      port:
-        default: "8081"
-
 channels:
   MachineSnapshot:
     address: ws/v1/machine/snapshot

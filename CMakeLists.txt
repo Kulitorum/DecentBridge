@@ -40,6 +40,7 @@ list(APPEND SOURCES
     src/ble/blemanager.cpp
     src/ble/de1device.cpp
     src/ble/scaledevice.cpp
+    src/ble/sensordevice.cpp
     src/ble/protocol/binarycodec.cpp
 )
 
@@ -47,6 +48,7 @@ list(APPEND HEADERS
     src/ble/blemanager.h
     src/ble/de1device.h
     src/ble/scaledevice.h
+    src/ble/sensordevice.h
     src/ble/protocol/de1characteristics.h
     src/ble/protocol/binarycodec.h
 )
@@ -84,6 +86,17 @@ list(APPEND HEADERS
     src/ble/scales/smartchefscale.h
     src/ble/scales/solobaristascale.h
     src/ble/scales/variaakuscale.h
+)
+
+# Sensor implementations
+list(APPEND SOURCES
+    src/ble/sensors/sensorfactory.cpp
+    src/ble/sensors/bookoomonitor.cpp
+)
+
+list(APPEND HEADERS
+    src/ble/sensors/sensorfactory.h
+    src/ble/sensors/bookoomonitor.h
 )
 
 # BLE transport layer (platform-specific)

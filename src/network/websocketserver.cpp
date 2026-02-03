@@ -2,6 +2,7 @@
 #include "core/bridge.h"
 #include "ble/de1device.h"
 #include "ble/scaledevice.h"
+#include "ble/sensordevice.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -74,16 +75,37 @@ void WebSocketServer::onNewConnection()
 
         // Determine channel from request path
         QUrl requestUrl = socket->requestUrl();
-        Channel channel = channelFromPath(requestUrl.path());
+        QString path = requestUrl.path();
+        Channel channel = channelFromPath(path);
 
-        m_subscribers[channel].insert(socket);
-        qCDebug(lcWebSocket) << "Client connected to" << requestUrl.path();
+        // Handle sensor subscriptions specially
+        if (channel == Channel::SensorSnapshot) {
+            // Extract sensor ID from path: /ws/v1/sensors/{id}/snapshot
+            QStringList parts = path.split('/');
+            if (parts.size() >= 5) {
+                QString sensorId = parts[4];
+                m_sensorSubscribers[sensorId].insert(socket);
+                qCDebug(lcWebSocket) << "Client subscribed to sensor" << sensorId;
+
+                // Send initial snapshot if sensor connected
+                auto sensor = m_bridge->sensor(sensorId);
+                if (sensor && sensor->isConnected()) {
+                    QByteArray data = QJsonDocument(sensor->toSnapshot()).toJson(QJsonDocument::Compact);
+                    socket->sendTextMessage(QString::fromUtf8(data));
+                }
+            }
+        } else {
+            m_subscribers[channel].insert(socket);
+        }
+
+        qCDebug(lcWebSocket) << "Client connected to" << path;
 
         // Send initial state immediately
         switch (channel) {
             case Channel::MachineSnapshot:
                 if (m_bridge->de1() && m_bridge->de1()->isConnected()) {
-                    // TODO: Send current snapshot
+                    QByteArray data = QJsonDocument(m_bridge->de1()->toSnapshot()).toJson(QJsonDocument::Compact);
+                    socket->sendTextMessage(QString::fromUtf8(data));
                 }
                 break;
             case Channel::ScaleSnapshot:
@@ -133,6 +155,11 @@ void WebSocketServer::onDisconnected()
         subscribers.remove(socket);
     }
 
+    // Remove from sensor subscriber lists
+    for (auto &subscribers : m_sensorSubscribers) {
+        subscribers.remove(socket);
+    }
+
     socket->deleteLater();
     qCDebug(lcWebSocket) << "Client disconnected";
 }
@@ -147,6 +174,8 @@ WebSocketServer::Channel WebSocketServer::channelFromPath(const QString &path)
         return Channel::WaterLevels;
     } else if (path == "/ws/v1/scale/snapshot") {
         return Channel::ScaleSnapshot;
+    } else if (path.startsWith("/ws/v1/sensors/") && path.endsWith("/snapshot")) {
+        return Channel::SensorSnapshot;
     } else if (path == "/ws/v1/machine/raw") {
         return Channel::Raw;
     }
@@ -199,4 +228,22 @@ void WebSocketServer::broadcastShotSettings(const QJsonObject &settings)
 {
     QByteArray data = QJsonDocument(settings).toJson(QJsonDocument::Compact);
     broadcast(Channel::ShotSettings, data);
+}
+
+void WebSocketServer::broadcastSensorData(const QString &sensorId, const QJsonObject &data)
+{
+    QByteArray json = QJsonDocument(data).toJson(QJsonDocument::Compact);
+    broadcastToSensor(sensorId, json);
+}
+
+void WebSocketServer::broadcastToSensor(const QString &sensorId, const QByteArray &data)
+{
+    auto it = m_sensorSubscribers.find(sensorId);
+    if (it == m_sensorSubscribers.end()) return;
+
+    for (QWebSocket *socket : *it) {
+        if (socket->isValid()) {
+            socket->sendTextMessage(QString::fromUtf8(data));
+        }
+    }
 }

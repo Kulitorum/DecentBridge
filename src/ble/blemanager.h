@@ -31,12 +31,15 @@ public:
     // Device type detection
     bool isDE1(const QBluetoothDeviceInfo &device) const;
     bool isScale(const QBluetoothDeviceInfo &device) const;
+    bool isSensor(const QBluetoothDeviceInfo &device) const;
     QString scaleType(const QBluetoothDeviceInfo &device) const;
+    QString sensorType(const QBluetoothDeviceInfo &device) const;
 
 signals:
     void scanningChanged(bool scanning);
     void de1Discovered(const QBluetoothDeviceInfo &device);
     void scaleDiscovered(const QBluetoothDeviceInfo &device);
+    void sensorDiscovered(const QBluetoothDeviceInfo &device);
     void scanFinished();
     void error(const QString &message);
 

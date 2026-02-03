@@ -1,5 +1,6 @@
 #include "blemanager.h"
 #include "protocol/de1characteristics.h"
+#include "sensors/sensorfactory.h"
 
 #include <QLoggingCategory>
 #include <QCoreApplication>
@@ -138,6 +139,10 @@ void BLEManager::onDeviceDiscovered(const QBluetoothDeviceInfo &device)
         QString type = scaleType(device);
         qCInfo(lcBLE) << "Found" << type << "scale:" << device.name() << device.address().toString();
         emit scaleDiscovered(device);
+    } else if (isSensor(device)) {
+        QString type = sensorType(device);
+        qCInfo(lcBLE) << "Found" << type << "sensor:" << device.name() << device.address().toString();
+        emit sensorDiscovered(device);
     }
 }
 
@@ -194,7 +199,7 @@ QString BLEManager::scaleType(const QBluetoothDeviceInfo &device) const
     if (nameLower.startsWith("pyxis")) return "Acaia Pyxis";
     if (nameLower.startsWith("felicita")) return "Felicita";
     if (nameLower.startsWith("skale")) return "Skale";
-    if (nameLower.startsWith("bookoo")) return "Bookoo";
+    if (nameLower.startsWith("bookoo") && !nameLower.contains("em") && !nameLower.contains("monitor")) return "Bookoo";
     if (nameLower.startsWith("eureka")) return "Eureka";
     if (nameLower.startsWith("difluid")) return "DiFluid";
     if (nameLower.startsWith("hiroia") || nameLower.startsWith("jimmy")) return "Hiroia";
@@ -202,4 +207,14 @@ QString BLEManager::scaleType(const QBluetoothDeviceInfo &device) const
     if (nameLower.startsWith("smartchef")) return "SmartChef";
 
     return QString();
+}
+
+bool BLEManager::isSensor(const QBluetoothDeviceInfo &device) const
+{
+    return SensorFactory::isSensor(device);
+}
+
+QString BLEManager::sensorType(const QBluetoothDeviceInfo &device) const
+{
+    return SensorFactory::sensorType(device);
 }
