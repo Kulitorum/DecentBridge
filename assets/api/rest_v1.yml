@@ -8,14 +8,6 @@ info:
     This API provides endpoints to discover and connect to Bluetooth devices, control the DE1 machine,
     and interact with connected scales and sensors.
 
-servers:
-  - url: http://{host}:{port}
-    variables:
-      host:
-        default: localhost
-      port:
-        default: "8080"
-
 tags:
   - name: Devices
     description: BLE device discovery and connection management
