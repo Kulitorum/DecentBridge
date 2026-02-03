@@ -35,6 +35,7 @@ public:
     DE1Device *de1() const { return m_de1.get(); }
     ScaleDevice *scale() const { return m_scale; }
     BLEManager *bleManager() const { return m_bleManager.get(); }
+    Settings *settings() const { return m_settings; }
 
     // Scale control
     void disconnectScale();

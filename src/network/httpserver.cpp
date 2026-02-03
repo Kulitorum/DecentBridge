@@ -45,7 +45,9 @@ void HttpServer::setupRoutes()
     m_getRoutes["/api/v1/machine/state"] = [this](auto& req, auto& res) { handleGetMachineState(req, res); };
     m_getRoutes["/api/v1/machine/settings"] = [this](auto& req, auto& res) { handleGetMachineSettings(req, res); };
     m_getRoutes["/api/v1/machine/shotSettings"] = [this](auto& req, auto& res) { handleGetShotSettings(req, res); };
+    m_getRoutes["/api/v1/machine/waterLevels"] = [this](auto& req, auto& res) { handleGetWaterLevels(req, res); };
     m_getRoutes["/api/v1/settings"] = [this](auto& req, auto& res) { handleGetSettings(req, res); };
+    m_getRoutes["/api/v1/sensors"] = [this](auto& req, auto& res) { handleGetSensors(req, res); };
 
     // POST routes
     m_postRoutes["/api/v1/machine/profile"] = [this](auto& req, auto& res) { handlePostProfile(req, res); };
@@ -189,6 +191,14 @@ void HttpServer::handleRequest(QTcpSocket *socket, const HttpRequest &request)
     RouteHandler handler = nullptr;
 
     if (request.method == "GET") {
+        // Check for sensor by ID pattern: /api/v1/sensors/:id
+        if (request.path.startsWith("/api/v1/sensors/") && request.path != "/api/v1/sensors") {
+            QString sensorId = request.path.section('/', -1);
+            handleGetSensorById(request, response, sensorId);
+            socket->write(response.toBytes());
+            socket->close();
+            return;
+        }
         handler = m_getRoutes.value(request.path);
     } else if (request.method == "POST") {
         handler = m_postRoutes.value(request.path);
@@ -481,8 +491,10 @@ void HttpServer::handleGetShotSettings(const HttpRequest &, HttpResponse &res)
         return;
     }
 
-    // TODO: Get shot settings from DE1
+    // Shot settings are profile-dependent - return basic target values
     QJsonObject settings;
+    settings["targetShotVolume"] = 0; // Profile-dependent
+    settings["groupTemp"] = m_bridge->de1()->headTemp();
     res.setJson(QJsonDocument(settings).toJson(QJsonDocument::Compact));
 }
 
@@ -493,8 +505,43 @@ void HttpServer::handlePostShotSettings(const HttpRequest &req, HttpResponse &re
         return;
     }
 
-    // TODO: Parse and apply shot settings
-    res.setJson("{}");
+    // Shot settings are sent via profile upload - this is for quick overrides
+    // Currently not implemented in DE1Device
+    res.statusCode = 501;
+    res.statusText = "Not Implemented";
+    QJsonObject obj;
+    obj["error"] = "Shot settings are controlled via profile upload";
+    res.setJson(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+// Route handlers - Water Levels
+void HttpServer::handleGetWaterLevels(const HttpRequest &, HttpResponse &res)
+{
+    if (!m_bridge->de1() || !m_bridge->de1()->isConnected()) {
+        res.setError(503, "DE1 not connected");
+        return;
+    }
+
+    QJsonObject levels;
+    levels["currentLevel"] = m_bridge->de1()->waterLevel();
+    levels["refillLevel"] = 5; // Default refill threshold in mm
+    res.setJson(QJsonDocument(levels).toJson(QJsonDocument::Compact));
+}
+
+// Route handlers - Sensors
+void HttpServer::handleGetSensors(const HttpRequest &, HttpResponse &res)
+{
+    // Sensors are not yet implemented in DecentBridge
+    // Return empty array for now
+    QJsonArray sensors;
+    res.setJson(QJsonDocument(sensors).toJson(QJsonDocument::Compact));
+}
+
+void HttpServer::handleGetSensorById(const HttpRequest &, HttpResponse &res, const QString &id)
+{
+    Q_UNUSED(id)
+    // Sensors are not yet implemented
+    res.setError(404, "Sensor not found");
 }
 
 // Route handlers - Scale
@@ -523,14 +570,26 @@ void HttpServer::handleDisconnectScale(const HttpRequest &, HttpResponse &res)
 // Route handlers - Settings
 void HttpServer::handleGetSettings(const HttpRequest &, HttpResponse &res)
 {
-    // TODO: Return bridge settings
     QJsonObject settings;
+    settings["httpPort"] = m_bridge->settings()->httpPort();
+    settings["webSocketPort"] = m_bridge->settings()->webSocketPort();
+    settings["autoConnect"] = m_bridge->settings()->autoConnect();
+    settings["autoConnectScale"] = m_bridge->settings()->autoConnectScale();
     res.setJson(QJsonDocument(settings).toJson(QJsonDocument::Compact));
 }
 
-void HttpServer::handlePostSettings(const HttpRequest &, HttpResponse &res)
+void HttpServer::handlePostSettings(const HttpRequest &req, HttpResponse &res)
 {
-    // TODO: Apply bridge settings
+    QJsonDocument doc = QJsonDocument::fromJson(req.body);
+    QJsonObject obj = doc.object();
+
+    if (obj.contains("autoConnect")) {
+        m_bridge->settings()->setAutoConnect(obj["autoConnect"].toBool());
+    }
+    if (obj.contains("autoConnectScale")) {
+        m_bridge->settings()->setAutoConnectScale(obj["autoConnectScale"].toBool());
+    }
+
     res.setJson("{}");
 }
 

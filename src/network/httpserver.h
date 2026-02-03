@@ -82,6 +82,13 @@ private:
     void handleTareScale(const HttpRequest &req, HttpResponse &res);
     void handleDisconnectScale(const HttpRequest &req, HttpResponse &res);
 
+    // Route handlers - Water Levels
+    void handleGetWaterLevels(const HttpRequest &req, HttpResponse &res);
+
+    // Route handlers - Sensors
+    void handleGetSensors(const HttpRequest &req, HttpResponse &res);
+    void handleGetSensorById(const HttpRequest &req, HttpResponse &res, const QString &id);
+
     // Route handlers - Settings
     void handleGetSettings(const HttpRequest &req, HttpResponse &res);
     void handlePostSettings(const HttpRequest &req, HttpResponse &res);
