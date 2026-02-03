@@ -67,6 +67,24 @@ public:
     int fanThreshold() const { return m_fanThreshold; }
     void setFanThreshold(int temp);
 
+    // Shot settings
+    int steamSetting() const { return m_steamSetting; }
+    int targetSteamTemp() const { return m_targetSteamTemp; }
+    int targetSteamDuration() const { return m_targetSteamDuration; }
+    int targetHotWaterTemp() const { return m_targetHotWaterTemp; }
+    int targetHotWaterVolume() const { return m_targetHotWaterVolume; }
+    int targetHotWaterDuration() const { return m_targetHotWaterDuration; }
+    int targetShotVolume() const { return m_targetShotVolume; }
+    double targetGroupTemp() const { return m_targetGroupTemp; }
+
+    void setShotSettings(int steamSetting, int steamTemp, int steamDuration,
+                        int hotWaterTemp, int hotWaterVolume, int hotWaterDuration,
+                        int shotVolume, double groupTemp);
+    QJsonObject shotSettingsToJson() const;
+
+    // Profile upload
+    bool uploadProfile(const QJsonObject &profile);
+
     // JSON snapshot for API
     QJsonObject toSnapshot() const;
     QJsonObject toMachineInfo() const;
@@ -97,6 +115,7 @@ private:
     void parseShotSample(const QByteArray &data);
     void parseWaterLevels(const QByteArray &data);
     void parseVersions(const QByteArray &data);
+    void parseShotSettings(const QByteArray &data);
     void readMMR(uint32_t address);
     void writeMMR(uint32_t address, const QByteArray &data);
     void writeCharacteristic(const QBluetoothUuid &uuid, const QByteArray &data);
@@ -132,6 +151,16 @@ private:
     // Settings
     bool m_usbCharger = false;
     int m_fanThreshold = 50;
+
+    // Shot settings
+    int m_steamSetting = 1;
+    int m_targetSteamTemp = 160;
+    int m_targetSteamDuration = 120;
+    int m_targetHotWaterTemp = 85;
+    int m_targetHotWaterVolume = 200;
+    int m_targetHotWaterDuration = 60;
+    int m_targetShotVolume = 0;
+    double m_targetGroupTemp = 93.0;
 };
 
 #endif // DE1DEVICE_H

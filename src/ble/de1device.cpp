@@ -155,6 +155,11 @@ void DE1Device::setupService()
     if (waterChar.isValid()) {
         m_service->readCharacteristic(waterChar);
     }
+
+    auto shotSettingsChar = m_service->characteristic(DE1::Characteristic::SHOT_SETTINGS);
+    if (shotSettingsChar.isValid()) {
+        m_service->readCharacteristic(shotSettingsChar);
+    }
 }
 
 void DE1Device::subscribeToCharacteristics()
@@ -185,6 +190,8 @@ void DE1Device::onCharacteristicChanged(const QLowEnergyCharacteristic &c, const
         parseShotSample(value);
     } else if (c.uuid() == DE1::Characteristic::WATER_LEVELS) {
         parseWaterLevels(value);
+    } else if (c.uuid() == DE1::Characteristic::SHOT_SETTINGS) {
+        parseShotSettings(value);
     }
 }
 
@@ -288,6 +295,33 @@ void DE1Device::parseVersions(const QByteArray &data)
     qCInfo(lcDE1) << "Firmware version:" << m_firmwareVersion;
 }
 
+void DE1Device::parseShotSettings(const QByteArray &data)
+{
+    if (data.size() < 9) return;
+
+    // ShotSettings characteristic format (9 bytes):
+    // Byte 0: Steam setting (0-3)
+    // Byte 1: Target steam temp (C)
+    // Byte 2: Target steam duration (s)
+    // Byte 3: Target hot water temp (C)
+    // Byte 4: Target hot water volume (ml)
+    // Byte 5: Target hot water duration (s)
+    // Byte 6: Target shot volume (ml)
+    // Bytes 7-8: Group temp (U16P8 big-endian)
+
+    m_steamSetting = static_cast<uint8_t>(data[0]);
+    m_targetSteamTemp = static_cast<uint8_t>(data[1]);
+    m_targetSteamDuration = static_cast<uint8_t>(data[2]);
+    m_targetHotWaterTemp = static_cast<uint8_t>(data[3]);
+    m_targetHotWaterVolume = static_cast<uint8_t>(data[4]);
+    m_targetHotWaterDuration = static_cast<uint8_t>(data[5]);
+    m_targetShotVolume = static_cast<uint8_t>(data[6]);
+    m_targetGroupTemp = BinaryCodec::decodeU16P8(BinaryCodec::decodeShortBE(data, 7));
+
+    qCInfo(lcDE1) << "Shot settings: steam" << m_targetSteamTemp << "C, hotWater"
+                  << m_targetHotWaterTemp << "C, group" << m_targetGroupTemp << "C";
+}
+
 bool DE1Device::requestState(const QString &stateName)
 {
     // Map string to state enum
@@ -341,6 +375,122 @@ void DE1Device::setFanThreshold(int temp)
     data[0] = static_cast<char>(temp);
     writeMMR(DE1::MMR::FAN_THRESHOLD, data);
     m_fanThreshold = temp;
+}
+
+void DE1Device::setShotSettings(int steamSetting, int steamTemp, int steamDuration,
+                                int hotWaterTemp, int hotWaterVolume, int hotWaterDuration,
+                                int shotVolume, double groupTemp)
+{
+    if (!m_connected || !m_service) return;
+
+    QByteArray data(9, 0);
+    data[0] = static_cast<char>(steamSetting);
+    data[1] = static_cast<char>(steamTemp);
+    data[2] = static_cast<char>(steamDuration);
+    data[3] = static_cast<char>(hotWaterTemp);
+    data[4] = static_cast<char>(hotWaterVolume);
+    data[5] = static_cast<char>(hotWaterDuration);
+    data[6] = static_cast<char>(shotVolume);
+
+    uint16_t groupTempEncoded = BinaryCodec::encodeU16P8(groupTemp);
+    QByteArray groupTempBE = BinaryCodec::encodeShortBE(groupTempEncoded);
+    data[7] = groupTempBE[0];
+    data[8] = groupTempBE[1];
+
+    writeCharacteristic(DE1::Characteristic::SHOT_SETTINGS, data);
+
+    // Update local values
+    m_steamSetting = steamSetting;
+    m_targetSteamTemp = steamTemp;
+    m_targetSteamDuration = steamDuration;
+    m_targetHotWaterTemp = hotWaterTemp;
+    m_targetHotWaterVolume = hotWaterVolume;
+    m_targetHotWaterDuration = hotWaterDuration;
+    m_targetShotVolume = shotVolume;
+    m_targetGroupTemp = groupTemp;
+
+    qCInfo(lcDE1) << "Shot settings updated";
+}
+
+QJsonObject DE1Device::shotSettingsToJson() const
+{
+    QJsonObject obj;
+    obj["steamSetting"] = m_steamSetting;
+    obj["targetSteamTemp"] = m_targetSteamTemp;
+    obj["targetSteamDuration"] = m_targetSteamDuration;
+    obj["targetHotWaterTemp"] = m_targetHotWaterTemp;
+    obj["targetHotWaterVolume"] = m_targetHotWaterVolume;
+    obj["targetHotWaterDuration"] = m_targetHotWaterDuration;
+    obj["targetShotVolume"] = m_targetShotVolume;
+    obj["groupTemp"] = m_targetGroupTemp;
+    return obj;
+}
+
+bool DE1Device::uploadProfile(const QJsonObject &profile)
+{
+    if (!m_connected || !m_service) return false;
+
+    // Profile upload requires:
+    // 1. Write header to HEADER_WRITE (0xA00F)
+    // 2. Write each frame to FRAME_WRITE (0xA010)
+
+    // Extract profile data
+    int numberOfFrames = 0;
+    QJsonArray steps = profile["steps"].toArray();
+    if (steps.isEmpty()) {
+        qCWarning(lcDE1) << "Profile has no steps";
+        return false;
+    }
+
+    // Build header (20 bytes)
+    QByteArray header(20, 0);
+    header[0] = 1; // Header version
+    header[1] = static_cast<char>(steps.size()); // Number of frames
+
+    // Target volumes (U10P0 format)
+    double targetVolume = profile["target_volume"].toDouble(0);
+    double targetWeight = profile["target_weight"].toDouble(0);
+    uint16_t volEncoded = BinaryCodec::encodeU10P0(targetVolume);
+    header[2] = static_cast<char>(volEncoded >> 8);
+    header[3] = static_cast<char>(volEncoded & 0xFF);
+
+    // Write header
+    writeCharacteristic(DE1::Characteristic::HEADER_WRITE, header);
+    qCInfo(lcDE1) << "Profile header written, frames:" << steps.size();
+
+    // Write each frame (8 bytes each)
+    for (int i = 0; i < steps.size(); ++i) {
+        QJsonObject step = steps[i].toObject();
+
+        QByteArray frame(8, 0);
+        frame[0] = static_cast<char>(i); // Frame number
+
+        // Build flags
+        uint8_t flags = 0;
+        QString pump = step["pump"].toString("pressure");
+        if (pump == "flow") flags |= DE1::FrameFlag::CtrlF;
+        if (step["transition"].toString() == "smooth") flags |= DE1::FrameFlag::Interpolate;
+        frame[1] = static_cast<char>(flags);
+
+        // Target pressure/flow (U8P4)
+        frame[2] = BinaryCodec::encodeU8P4(step["pressure"].toDouble(0));
+        frame[3] = BinaryCodec::encodeU8P4(step["flow"].toDouble(0));
+
+        // Temperature (U8P1)
+        frame[4] = BinaryCodec::encodeU8P1(step["temperature"].toDouble(93));
+
+        // Duration (F8_1_7)
+        frame[5] = BinaryCodec::encodeF8_1_7(step["seconds"].toDouble(0));
+
+        // Exit trigger
+        frame[6] = 0; // Exit type
+        frame[7] = 0; // Exit value
+
+        writeCharacteristic(DE1::Characteristic::FRAME_WRITE, frame);
+    }
+
+    qCInfo(lcDE1) << "Profile uploaded:" << profile["title"].toString();
+    return true;
 }
 
 void DE1Device::writeCharacteristic(const QBluetoothUuid &uuid, const QByteArray &data)

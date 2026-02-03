@@ -460,8 +460,10 @@ void HttpServer::handlePostProfile(const HttpRequest &req, HttpResponse &res)
         return;
     }
 
-    // TODO: Parse and upload profile
-    // m_bridge->de1()->setProfile(profile);
+    if (!m_bridge->de1()->uploadProfile(doc.object())) {
+        res.setError(400, "Failed to upload profile");
+        return;
+    }
 
     res.setJson("{}");
 }
@@ -510,11 +512,7 @@ void HttpServer::handleGetShotSettings(const HttpRequest &, HttpResponse &res)
         return;
     }
 
-    // Shot settings are profile-dependent - return basic target values
-    QJsonObject settings;
-    settings["targetShotVolume"] = 0; // Profile-dependent
-    settings["groupTemp"] = m_bridge->de1()->headTemp();
-    res.setJson(QJsonDocument(settings).toJson(QJsonDocument::Compact));
+    res.setJson(QJsonDocument(m_bridge->de1()->shotSettingsToJson()).toJson(QJsonDocument::Compact));
 }
 
 void HttpServer::handlePostShotSettings(const HttpRequest &req, HttpResponse &res)
@@ -524,13 +522,24 @@ void HttpServer::handlePostShotSettings(const HttpRequest &req, HttpResponse &re
         return;
     }
 
-    // Shot settings are sent via profile upload - this is for quick overrides
-    // Currently not implemented in DE1Device
-    res.statusCode = 501;
-    res.statusText = "Not Implemented";
-    QJsonObject obj;
-    obj["error"] = "Shot settings are controlled via profile upload";
-    res.setJson(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    QJsonDocument doc = QJsonDocument::fromJson(req.body);
+    QJsonObject obj = doc.object();
+
+    // Use current values as defaults
+    int steamSetting = obj.contains("steamSetting") ? obj["steamSetting"].toInt() : m_bridge->de1()->steamSetting();
+    int steamTemp = obj.contains("targetSteamTemp") ? obj["targetSteamTemp"].toInt() : m_bridge->de1()->targetSteamTemp();
+    int steamDuration = obj.contains("targetSteamDuration") ? obj["targetSteamDuration"].toInt() : m_bridge->de1()->targetSteamDuration();
+    int hotWaterTemp = obj.contains("targetHotWaterTemp") ? obj["targetHotWaterTemp"].toInt() : m_bridge->de1()->targetHotWaterTemp();
+    int hotWaterVolume = obj.contains("targetHotWaterVolume") ? obj["targetHotWaterVolume"].toInt() : m_bridge->de1()->targetHotWaterVolume();
+    int hotWaterDuration = obj.contains("targetHotWaterDuration") ? obj["targetHotWaterDuration"].toInt() : m_bridge->de1()->targetHotWaterDuration();
+    int shotVolume = obj.contains("targetShotVolume") ? obj["targetShotVolume"].toInt() : m_bridge->de1()->targetShotVolume();
+    double groupTemp = obj.contains("groupTemp") ? obj["groupTemp"].toDouble() : m_bridge->de1()->targetGroupTemp();
+
+    m_bridge->de1()->setShotSettings(steamSetting, steamTemp, steamDuration,
+                                     hotWaterTemp, hotWaterVolume, hotWaterDuration,
+                                     shotVolume, groupTemp);
+
+    res.setJson(QJsonDocument(m_bridge->de1()->shotSettingsToJson()).toJson(QJsonDocument::Compact));
 }
 
 // Route handlers - Water Levels
