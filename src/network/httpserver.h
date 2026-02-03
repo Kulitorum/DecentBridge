@@ -92,6 +92,7 @@ private:
 
     // Route handlers - Scale
     void handleTareScale(const HttpRequest &req, HttpResponse &res);
+    void handleDisconnectScale(const HttpRequest &req, HttpResponse &res);
 
     // Route handlers - Settings
     void handleGetSettings(const HttpRequest &req, HttpResponse &res);

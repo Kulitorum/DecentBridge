@@ -121,14 +121,22 @@ void BLEManager::onDeviceDiscovered(const QBluetoothDeviceInfo &device)
         return;
     }
 
+    // Check for duplicate (same address already in list)
+    QString address = device.address().toString();
+    for (const auto &existing : m_devices) {
+        if (existing.address().toString() == address) {
+            return; // Already have this device
+        }
+    }
+
     m_devices.append(device);
 
     if (isDE1(device)) {
         qCInfo(lcBLE) << "Found DE1:" << device.name() << device.address().toString();
         emit de1Discovered(device);
     } else if (isScale(device)) {
-        qCInfo(lcBLE) << "Found scale:" << device.name()
-                      << "(" << scaleType(device) << ")";
+        QString type = scaleType(device);
+        qCInfo(lcBLE) << "Found" << type << "scale:" << device.name() << device.address().toString();
         emit scaleDiscovered(device);
     }
 }
@@ -148,6 +156,11 @@ void BLEManager::onScanError(QBluetoothDeviceDiscoveryAgent::Error error)
 
 bool BLEManager::isDE1(const QBluetoothDeviceInfo &device) const
 {
+    // Check if it's a known scale first - scales are NOT DE1 machines
+    if (isScale(device)) {
+        return false;
+    }
+
     QString name = device.name().toLower();
 
     // DE1 devices advertise as "DE1" or contain "decent"
@@ -173,19 +186,20 @@ bool BLEManager::isScale(const QBluetoothDeviceInfo &device) const
 QString BLEManager::scaleType(const QBluetoothDeviceInfo &device) const
 {
     QString name = device.name();
+    QString nameLower = name.toLower();
 
-    // Detect scale by name pattern
+    // Detect scale by name pattern (case-insensitive where needed)
     if (name.startsWith("Decent Scale")) return "Decent";
-    if (name.startsWith("ACAIA") || name.startsWith("PROCH")) return "Acaia";
-    if (name.startsWith("PYXIS")) return "Acaia Pyxis";
-    if (name.startsWith("FELICITA")) return "Felicita";
-    if (name.startsWith("Skale")) return "Skale";
-    if (name.startsWith("BOOKOO")) return "Bookoo";
-    if (name.startsWith("EUREKA")) return "Eureka";
-    if (name.startsWith("DiFluid")) return "DiFluid";
-    if (name.startsWith("Hiroia") || name.startsWith("JIMMY")) return "Hiroia";
-    if (name.startsWith("VARIA")) return "Varia";
-    if (name.startsWith("SmartChef")) return "SmartChef";
+    if (nameLower.startsWith("acaia") || nameLower.startsWith("proch")) return "Acaia";
+    if (nameLower.startsWith("pyxis")) return "Acaia Pyxis";
+    if (nameLower.startsWith("felicita")) return "Felicita";
+    if (nameLower.startsWith("skale")) return "Skale";
+    if (nameLower.startsWith("bookoo")) return "Bookoo";
+    if (nameLower.startsWith("eureka")) return "Eureka";
+    if (nameLower.startsWith("difluid")) return "DiFluid";
+    if (nameLower.startsWith("hiroia") || nameLower.startsWith("jimmy")) return "Hiroia";
+    if (nameLower.startsWith("varia")) return "Varia";
+    if (nameLower.startsWith("smartchef")) return "SmartChef";
 
     return QString();
 }

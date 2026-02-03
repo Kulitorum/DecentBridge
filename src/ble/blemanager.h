@@ -28,6 +28,11 @@ public:
 
     QList<QBluetoothDeviceInfo> discoveredDevices() const { return m_devices; }
 
+    // Device type detection
+    bool isDE1(const QBluetoothDeviceInfo &device) const;
+    bool isScale(const QBluetoothDeviceInfo &device) const;
+    QString scaleType(const QBluetoothDeviceInfo &device) const;
+
 signals:
     void scanningChanged(bool scanning);
     void de1Discovered(const QBluetoothDeviceInfo &device);
@@ -43,10 +48,6 @@ private slots:
 private:
     void requestBluetoothPermission();
     void doStartScan();
-
-    bool isDE1(const QBluetoothDeviceInfo &device) const;
-    bool isScale(const QBluetoothDeviceInfo &device) const;
-    QString scaleType(const QBluetoothDeviceInfo &device) const;
 
     QBluetoothDeviceDiscoveryAgent *m_agent = nullptr;
     QList<QBluetoothDeviceInfo> m_devices;

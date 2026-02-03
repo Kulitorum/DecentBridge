@@ -59,7 +59,7 @@ private:
     int m_httpPort = 8080;
     int m_webSocketPort = 8081;
     bool m_autoConnect = true;
-    bool m_autoConnectScale = true;
+    bool m_autoConnectScale = false;
     QString m_de1Address;
     double m_targetWeight = 36.0;
     double m_weightFlowMultiplier = 1.0;

@@ -116,11 +116,25 @@ void Bridge::onDe1Discovered(const QBluetoothDeviceInfo &device)
 
 void Bridge::onScaleDiscovered(const QBluetoothDeviceInfo &device)
 {
-    if (m_scale && m_scale->isConnected()) {
+    // Auto-connect disabled - scales must be connected manually via connectToScale()
+    if (!m_settings->autoConnectScale()) {
         return;
     }
 
-    if (!m_settings->autoConnectScale()) {
+    connectToScale(device);
+}
+
+void Bridge::connectToScale(const QBluetoothDeviceInfo &device)
+{
+    qCInfo(lcBridge) << "connectToScale called for:" << device.name() << device.address().toString();
+
+    // Don't connect if already connected or connecting
+    if (m_scale && m_scale->isConnected()) {
+        qCInfo(lcBridge) << "Scale already connected, ignoring:" << device.name();
+        return;
+    }
+    if (m_scaleConnecting) {
+        qCInfo(lcBridge) << "Scale connection already in progress, ignoring:" << device.name();
         return;
     }
 
@@ -128,11 +142,12 @@ void Bridge::onScaleDiscovered(const QBluetoothDeviceInfo &device)
     auto scale = ScaleFactory::createScale(device, this);
 
     if (!scale) {
-        qCDebug(lcBridge) << "Unknown scale type:" << device.name();
+        qCWarning(lcBridge) << "Unknown scale type, cannot create:" << device.name();
         return;
     }
 
-    qCInfo(lcBridge) << "Connecting to scale:" << device.name();
+    qCInfo(lcBridge) << "Connecting to scale:" << device.name() << "type:" << scale->type();
+    m_scaleConnecting = true;
 
     // Clean up old scale if any
     if (m_scale) {
@@ -169,6 +184,8 @@ void Bridge::onDe1ConnectionChanged(bool connected)
 
 void Bridge::onScaleConnectionChanged(bool connected)
 {
+    m_scaleConnecting = false; // Connection attempt finished (success or failure)
+
     if (connected) {
         qCInfo(lcBridge) << "Scale connected:" << m_scale->name();
         emit scaleConnected();
@@ -180,5 +197,16 @@ void Bridge::onScaleConnectionChanged(bool connected)
         if (m_running && m_settings->autoConnectScale()) {
             m_bleManager->startScan();
         }
+    }
+}
+
+void Bridge::disconnectScale()
+{
+    m_scaleConnecting = false;
+    if (m_scale) {
+        qCInfo(lcBridge) << "Disconnecting scale:" << m_scale->name();
+        m_scale->disconnect();
+        m_scale->deleteLater();
+        m_scale = nullptr;
     }
 }

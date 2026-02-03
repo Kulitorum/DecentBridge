@@ -90,8 +90,9 @@ list(APPEND HEADERS
 list(APPEND HEADERS src/ble/transport/scalebletransport.h)
 
 if(ANDROID)
-    list(APPEND SOURCES src/ble/transport/androidscalebletransport.cpp)
-    list(APPEND HEADERS src/ble/transport/androidscalebletransport.h)
+    # Qt 6.10 BLE works on Android - no need for Nordic/Java fallback
+    list(APPEND SOURCES src/ble/transport/qtscalebletransport.cpp)
+    list(APPEND HEADERS src/ble/transport/qtscalebletransport.h)
 elseif(IOS)
     enable_language(OBJCXX)
     list(APPEND SOURCES src/ble/transport/corebluetooth/corebluetoothscalebletransport.mm)

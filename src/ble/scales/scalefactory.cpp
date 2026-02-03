@@ -12,23 +12,25 @@
 #include "atomhearteclairscale.h"
 #include "variaakuscale.h"
 
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(lcScaleFactory, "bridge.scale.factory")
+
 // Transport implementations
 #include "../transport/qtscalebletransport.h"
-#ifdef Q_OS_ANDROID
-#include "../transport/androidscalebletransport.h"
-#endif
 #ifdef Q_OS_IOS
 #include "../transport/corebluetooth/corebluetoothscalebletransport.h"
 #endif
 
 namespace {
     ScaleBleTransport* createTransportForPlatform() {
-#ifdef Q_OS_ANDROID
-        return new AndroidScaleBleTransport();
-#elif defined(Q_OS_IOS)
+#ifdef Q_OS_IOS
         // Use native CoreBluetooth on iOS - Qt BLE has issues with CCCD discovery
+        qCInfo(lcScaleFactory) << "Using CoreBluetoothScaleBleTransport (iOS)";
         return new CoreBluetoothScaleBleTransport();
 #else
+        // Qt 6.10 BLE works on Android and desktop
+        qCInfo(lcScaleFactory) << "Using QtScaleBleTransport";
         return new QtScaleBleTransport();
 #endif
     }
@@ -57,6 +59,8 @@ ScaleType ScaleFactory::detectScaleType(const QBluetoothDeviceInfo& device) {
 
 std::unique_ptr<ScaleDevice> ScaleFactory::createScale(const QBluetoothDeviceInfo& device, QObject* parent) {
     ScaleType type = detectScaleType(device);
+    qCInfo(lcScaleFactory) << "Creating scale for" << device.name()
+                           << "detected type:" << scaleTypeName(type);
 
     switch (type) {
         case ScaleType::DecentScale:

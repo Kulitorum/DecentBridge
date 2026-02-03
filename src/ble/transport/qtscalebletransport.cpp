@@ -342,11 +342,7 @@ void QtScaleBleTransport::onServiceStateChanged(QLowEnergyService::ServiceState 
 
 void QtScaleBleTransport::onCharacteristicChanged(const QLowEnergyCharacteristic& c,
                                                    const QByteArray& value) {
-    // Log raw notification data for debugging
-    QT_TRANSPORT_LOG(QString("Notify %1: %2 bytes: %3")
-        .arg(c.uuid().toString())
-        .arg(value.size())
-        .arg(QString(value.toHex())));
+    // Don't log every notification - too spammy (weight updates come constantly)
     emit characteristicChanged(c.uuid(), value);
 }
 

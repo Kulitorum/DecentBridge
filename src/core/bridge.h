@@ -36,6 +36,10 @@ public:
     ScaleDevice *scale() const { return m_scale; }
     BLEManager *bleManager() const { return m_bleManager.get(); }
 
+    // Scale control
+    void disconnectScale();
+    void connectToScale(const QBluetoothDeviceInfo &device);
+
 signals:
     void started();
     void stopped();
@@ -64,6 +68,7 @@ private:
     std::unique_ptr<WebSocketServer> m_wsServer;
 
     bool m_running = false;
+    bool m_scaleConnecting = false; // Prevents multiple simultaneous connection attempts
 };
 
 #endif // BRIDGE_H

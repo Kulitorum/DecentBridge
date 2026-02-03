@@ -49,6 +49,7 @@ void HttpServer::setupRoutes()
     // PUT routes
     m_putRoutes["/api/v1/devices/connect"] = [this](auto& req, auto& res) { handleConnectDevice(req, res); };
     m_putRoutes["/api/v1/scale/tare"] = [this](auto& req, auto& res) { handleTareScale(req, res); };
+    m_putRoutes["/api/v1/scale/disconnect"] = [this](auto& req, auto& res) { handleDisconnectScale(req, res); };
 }
 
 bool HttpServer::start(int port)
@@ -268,6 +269,7 @@ void HttpServer::handleScanDevices(const HttpRequest &req, HttpResponse &res)
     QUrlQuery query(req.query);
     bool quick = query.queryItemValue("quick") == "true";
 
+    qCInfo(lcHttp) << "Scan requested, quick=" << quick;
     m_bridge->bleManager()->startScan();
 
     if (quick) {
@@ -281,24 +283,35 @@ void HttpServer::handleScanDevices(const HttpRequest &req, HttpResponse &res)
 void HttpServer::handleConnectDevice(const HttpRequest &req, HttpResponse &res)
 {
     QUrlQuery query(req.query);
-    QString deviceId = query.queryItemValue("deviceId");
+    QString deviceId = query.queryItemValue("deviceId", QUrl::FullyDecoded);
+
+    qCInfo(lcHttp) << "Connect request for deviceId:" << deviceId;
 
     if (deviceId.isEmpty()) {
+        qCWarning(lcHttp) << "Connect failed: deviceId required";
         res.setError(400, "deviceId required");
         return;
     }
 
     // Find the device in discovered devices and connect
     auto devices = m_bridge->bleManager()->discoveredDevices();
+    qCInfo(lcHttp) << "Searching" << devices.size() << "discovered devices";
+
     for (const auto &device : devices) {
-        if (device.address().toString() == deviceId) {
-            // This is a scale - emit signal to bridge to connect
-            emit m_bridge->bleManager()->scaleDiscovered(device);
+        QString addr = device.address().toString();
+        if (addr == deviceId) {
+            qCInfo(lcHttp) << "Found device, connecting to:" << device.name() << addr;
+            m_bridge->connectToScale(device);
             res.setJson("{}");
             return;
         }
     }
 
+    qCWarning(lcHttp) << "Device not found:" << deviceId;
+    qCWarning(lcHttp) << "Available devices:";
+    for (const auto &device : devices) {
+        qCWarning(lcHttp) << "  -" << device.name() << device.address().toString();
+    }
     res.setError(404, "Device not found");
 }
 
@@ -307,39 +320,32 @@ void HttpServer::handleGetDiscoveredDevices(const HttpRequest &, HttpResponse &r
     QJsonArray devices;
 
     auto discovered = m_bridge->bleManager()->discoveredDevices();
+    qCInfo(lcHttp) << "GET /discovered - found" << discovered.size() << "devices";
+
+    int scaleCount = 0;
     for (const auto &device : discovered) {
         QJsonObject obj;
         obj["name"] = device.name();
         obj["address"] = device.address().toString();
 
-        // Check if it's a scale or DE1
-        QString name = device.name();
-        if (name.startsWith("DE1") || name.contains("Decent", Qt::CaseInsensitive)) {
+        // Use BLEManager's detection logic for consistency
+        QString scaleType = m_bridge->bleManager()->scaleType(device);
+        if (!scaleType.isEmpty()) {
+            obj["type"] = "scale";
+            obj["scaleType"] = scaleType;
+            scaleCount++;
+        } else if (m_bridge->bleManager()->isDE1(device)) {
             obj["type"] = "machine";
             obj["scaleType"] = "";
         } else {
-            // Determine scale type
-            QString scaleType;
-            if (name.startsWith("Decent Scale")) scaleType = "Decent";
-            else if (name.startsWith("ACAIA") || name.startsWith("PROCH")) scaleType = "Acaia";
-            else if (name.startsWith("PYXIS")) scaleType = "Acaia Pyxis";
-            else if (name.startsWith("FELICITA")) scaleType = "Felicita";
-            else if (name.startsWith("Skale")) scaleType = "Skale";
-            else if (name.startsWith("BOOKOO")) scaleType = "Bookoo";
-            else if (name.startsWith("EUREKA")) scaleType = "Eureka";
-            else if (name.startsWith("DiFluid")) scaleType = "DiFluid";
-            else if (name.startsWith("Hiroia") || name.startsWith("JIMMY")) scaleType = "Hiroia";
-            else if (name.startsWith("VARIA")) scaleType = "Varia";
-            else if (name.startsWith("SmartChef")) scaleType = "SmartChef";
-            else scaleType = "unknown";
-
-            obj["type"] = scaleType.isEmpty() || scaleType == "unknown" ? "unknown" : "scale";
-            obj["scaleType"] = scaleType;
+            obj["type"] = "unknown";
+            obj["scaleType"] = "";
         }
 
         devices.append(obj);
     }
 
+    qCInfo(lcHttp) << "Returning" << devices.size() << "devices," << scaleCount << "scales";
     res.setJson(QJsonDocument(devices).toJson(QJsonDocument::Compact));
 }
 
@@ -496,6 +502,17 @@ void HttpServer::handleTareScale(const HttpRequest &, HttpResponse &res)
     res.setJson("{}");
 }
 
+void HttpServer::handleDisconnectScale(const HttpRequest &, HttpResponse &res)
+{
+    if (!m_bridge->scale()) {
+        res.setError(404, "No scale");
+        return;
+    }
+
+    m_bridge->disconnectScale();
+    res.setJson("{}");
+}
+
 // Route handlers - Settings
 void HttpServer::handleGetSettings(const HttpRequest &, HttpResponse &res)
 {
@@ -617,6 +634,7 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
         .btn-water { background: #5a3d7a; color: #fff; }
         .btn-sleep { background: #4a4a6a; color: #fff; }
         .btn-tare { background: #00d9ff; color: #000; }
+        .btn-disconnect { background: #ff4757; color: #fff; }
         .btn-scan { background: #ff9f43; color: #000; }
         .btn-scan:disabled { background: #666; color: #999; cursor: not-allowed; transform: none; }
         .scale-section { margin-top: 10px; }
@@ -720,6 +738,7 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
             </div>
             <div class="buttons">
                 <button class="btn-tare" onclick="tareScale()" id="btn-tare">Tare</button>
+                <button class="btn-disconnect" onclick="disconnectScale()" id="btn-disconnect">Disconnect</button>
                 <button class="btn-scan" onclick="scanForScales()" id="btn-scan">Scan for Scale</button>
             </div>
             <div id="scan-status"></div>
@@ -739,7 +758,7 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
 
         async function fetchData() {
             try {
-                // Fetch devices
+                // Fetch connected devices
                 const devRes = await fetch('/api/v1/devices');
                 const devices = await devRes.json();
 
@@ -756,6 +775,26 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
                 // Update weight from API if scale connected
                 if (scale && scale.weight !== undefined) {
                     document.getElementById('weight').textContent = scale.weight.toFixed(1);
+                }
+
+                // If no scale connected, show discovered scales automatically
+                if (!scale && !scanning) {
+                    const discRes = await fetch('/api/v1/devices/discovered');
+                    const discovered = await discRes.json();
+                    const foundScales = discovered.filter(d => d.type === 'scale');
+                    const list = document.getElementById('scale-list');
+                    const status = document.getElementById('scan-status');
+
+                    if (foundScales.length > 0) {
+                        list.innerHTML = foundScales.map(s =>
+                            '<div class=\"scale-item\">' +
+                            '<span>' + s.name + ' <small style=\"color:#888\">(' + s.scaleType + ')</small></span>' +
+                            '<button class=\"btn-tare\" onclick=\"connectScale(\'' + s.address + '\')\">Connect</button>' +
+                            '</div>'
+                        ).join('');
+                        status.className = 'visible';
+                        status.innerHTML = foundScales.length + ' scale(s) found. Click Connect to pair.';
+                    }
                 }
 
                 // Fetch machine state
@@ -808,6 +847,17 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
                 await fetch('/api/v1/scale/tare', { method: 'PUT' });
             } catch (e) {
                 document.getElementById('error').textContent = 'Failed to tare: ' + e.message;
+            }
+        }
+
+        async function disconnectScale() {
+            try {
+                await fetch('/api/v1/scale/disconnect', { method: 'PUT' });
+                document.getElementById('weight').textContent = '--';
+                document.getElementById('weight-flow').textContent = '--';
+                setTimeout(fetchData, 500);
+            } catch (e) {
+                document.getElementById('error').textContent = 'Failed to disconnect: ' + e.message;
             }
         }
 
