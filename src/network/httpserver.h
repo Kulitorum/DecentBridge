@@ -106,6 +106,7 @@ private:
     QMap<QString, RouteHandler> m_getRoutes;
     QMap<QString, RouteHandler> m_postRoutes;
     QMap<QString, RouteHandler> m_putRoutes;
+    QMap<QTcpSocket*, QByteArray> m_socketBuffers;
 };
 
 #endif // HTTPSERVER_H

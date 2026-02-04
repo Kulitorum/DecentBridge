@@ -451,31 +451,22 @@ bool DE1Device::uploadProfile(const QJsonObject &profile)
 {
     if (!m_connected || !m_service) return false;
 
-    // Profile upload requires:
-    // 1. Write header to HEADER_WRITE (0xA00F)
-    // 2. Write each frame to FRAME_WRITE (0xA010)
-
-    // Extract profile data
-    int numberOfFrames = 0;
     QJsonArray steps = profile["steps"].toArray();
     if (steps.isEmpty()) {
         qCWarning(lcDE1) << "Profile has no steps";
         return false;
     }
 
-    // Build header (20 bytes)
-    QByteArray header(20, 0);
-    header[0] = 1; // Header version
-    header[1] = static_cast<char>(steps.size()); // Number of frames
+    // Header: 5 bytes
+    // HeaderV(1), NumberOfFrames(1), NumberOfPreinfuseFrames(1),
+    // MinimumPressure(U8P4, 1), MaximumFlow(U8P4, 1)
+    QByteArray header(5, 0);
+    header[0] = 1; // HeaderV
+    header[1] = static_cast<char>(steps.size());
+    header[2] = 0; // NumberOfPreinfuseFrames (0 = auto)
+    header[3] = BinaryCodec::encodeU8P4(0.0); // MinimumPressure (0 = no limit)
+    header[4] = BinaryCodec::encodeU8P4(6.0); // MaximumFlow (6 mL/s default)
 
-    // Target volumes (U10P0 format)
-    double targetVolume = profile["target_volume"].toDouble(0);
-    double targetWeight = profile["target_weight"].toDouble(0);
-    uint16_t volEncoded = BinaryCodec::encodeU10P0(targetVolume);
-    header[2] = static_cast<char>(volEncoded >> 8);
-    header[3] = static_cast<char>(volEncoded & 0xFF);
-
-    // Write header
     writeCharacteristic(DE1::Characteristic::HEADER_WRITE, header);
     qCInfo(lcDE1) << "Profile header written, frames:" << steps.size();
 
@@ -484,31 +475,54 @@ bool DE1Device::uploadProfile(const QJsonObject &profile)
         QJsonObject step = steps[i].toObject();
 
         QByteArray frame(8, 0);
-        frame[0] = static_cast<char>(i); // Frame number
+        frame[0] = static_cast<char>(i); // FrameToWrite
 
         // Build flags
-        uint8_t flags = 0;
+        uint8_t flags = DE1::FrameFlag::IgnoreLimit; // Default
         QString pump = step["pump"].toString("pressure");
-        if (pump == "flow") flags |= DE1::FrameFlag::CtrlF;
+        bool isFlow = (pump == "flow");
+        if (isFlow) flags |= DE1::FrameFlag::CtrlF;
+        if (step["sensor"].toString() == "water") flags |= DE1::FrameFlag::TMixTemp;
         if (step["transition"].toString() == "smooth") flags |= DE1::FrameFlag::Interpolate;
+
+        // Exit condition flags
+        QJsonObject exit = step["exit"].toObject();
+        if (!exit.isEmpty()) {
+            flags |= DE1::FrameFlag::DoCompare;
+            QString exitType = exit["type"].toString();
+            QString exitCond = exit["condition"].toString();
+            if (exitCond == "over") flags |= DE1::FrameFlag::DC_GT;
+            if (exitType == "flow") flags |= DE1::FrameFlag::DC_CompF;
+        }
+
         frame[1] = static_cast<char>(flags);
 
-        // Target pressure/flow (U8P4)
-        frame[2] = BinaryCodec::encodeU8P4(step["pressure"].toDouble(0));
-        frame[3] = BinaryCodec::encodeU8P4(step["flow"].toDouble(0));
+        // SetVal: pressure or flow depending on pump mode (U8P4)
+        double setVal = isFlow ? step["flow"].toDouble(0) : step["pressure"].toDouble(0);
+        frame[2] = BinaryCodec::encodeU8P4(setVal);
 
         // Temperature (U8P1)
-        frame[4] = BinaryCodec::encodeU8P1(step["temperature"].toDouble(93));
+        frame[3] = BinaryCodec::encodeU8P1(step["temperature"].toDouble(93));
 
         // Duration (F8_1_7)
-        frame[5] = BinaryCodec::encodeF8_1_7(step["seconds"].toDouble(0));
+        frame[4] = BinaryCodec::encodeF8_1_7(step["seconds"].toDouble(0));
 
-        // Exit trigger
-        frame[6] = 0; // Exit type
-        frame[7] = 0; // Exit value
+        // TriggerVal (U8P4) - exit condition threshold
+        double triggerVal = exit.isEmpty() ? 0.0 : exit["value"].toDouble(0);
+        frame[5] = BinaryCodec::encodeU8P4(triggerVal);
+
+        // MaxVol (U10P0, 2 bytes)
+        uint16_t maxVol = BinaryCodec::encodeU10P0(step["volume"].toDouble(0));
+        frame[6] = static_cast<char>((maxVol >> 8) & 0xFF);
+        frame[7] = static_cast<char>(maxVol & 0xFF);
 
         writeCharacteristic(DE1::Characteristic::FRAME_WRITE, frame);
     }
+
+    // Tail frame
+    QByteArray tailFrame(8, 0);
+    tailFrame[0] = static_cast<char>(steps.size()); // FrameToWrite = number of frames
+    writeCharacteristic(DE1::Characteristic::FRAME_WRITE, tailFrame);
 
     qCInfo(lcDE1) << "Profile uploaded:" << profile["title"].toString();
     return true;

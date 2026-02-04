@@ -127,7 +127,27 @@ void HttpServer::onReadyRead()
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
-    QByteArray data = socket->readAll();
+    m_socketBuffers[socket] += socket->readAll();
+    QByteArray &data = m_socketBuffers[socket];
+
+    // Check if we have the complete headers (look for \r\n\r\n)
+    int headerEnd = data.indexOf("\r\n\r\n");
+    if (headerEnd == -1) return; // Headers not complete yet
+
+    // Extract Content-Length from headers
+    int contentLength = 0;
+    QString headerStr = QString::fromUtf8(data.left(headerEnd));
+    for (const QString &line : headerStr.split("\r\n")) {
+        if (line.toLower().startsWith("content-length:")) {
+            contentLength = line.mid(15).trimmed().toInt();
+            break;
+        }
+    }
+
+    // Check if we have the complete body
+    int bodyStart = headerEnd + 4; // skip \r\n\r\n
+    if (data.size() - bodyStart < contentLength) return; // Body not complete yet
+
     HttpRequest request;
 
     if (!parseRequest(data, request)) {
@@ -135,9 +155,11 @@ void HttpServer::onReadyRead()
         response.setError(400, "Bad Request");
         socket->write(response.toBytes());
         socket->close();
+        m_socketBuffers.remove(socket);
         return;
     }
 
+    m_socketBuffers.remove(socket);
     handleRequest(socket, request);
 }
 
@@ -145,6 +167,7 @@ void HttpServer::onDisconnected()
 {
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (socket) {
+        m_socketBuffers.remove(socket);
         socket->deleteLater();
     }
 }
