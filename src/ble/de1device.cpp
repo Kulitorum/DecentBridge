@@ -243,30 +243,30 @@ void DE1Device::parseStateInfo(const QByteArray &data)
 
 void DE1Device::parseShotSample(const QByteArray &data)
 {
-    if (data.size() < 15) return;
+    if (data.size() < 16) return;
 
     qCInfo(lcDE1) << "[DE1] Shot sample received, parsing...";
 
-    // Parse shot sample (see DE1 protocol docs)
-    // Bytes 0-1: Timer (uint16 BE, 0.01s units)
-    // Byte 2: GroupPressure (U8P4)
-    // Byte 3: GroupFlow (U8P4)
-    // Byte 4: MixTemp (U8P1)
-    // Byte 5: HeadTemp (U8P4, offset +73)
-    // Byte 6: SetMixTemp (U8P1)
-    // Byte 7: SetHeadTemp (U8P4, offset +73)
-    // Byte 8: SetGroupPressure (U8P4)
-    // Byte 9: SetGroupFlow (U8P4)
-    // Byte 10: FrameNumber
-    // Byte 11: SteamTemp (U8P0)
+    // Parse shot sample (DE1 T_ShotSample BLE characteristic)
+    // Bytes 0-1:   Timer (uint16 BE, 0.01s units)
+    // Byte 2:      GroupPressure (U8P4)
+    // Byte 3:      GroupFlow (U8P4)
+    // Bytes 4-5:   MixTemp (U16P8)
+    // Bytes 6-7:   HeadTemp (U16P8)
+    // Bytes 8-9:   SetMixTemp (U16P8)
+    // Bytes 10-11: SetHeadTemp (U16P8, offset +73)
+    // Byte 12:     SetGroupPressure (U8P4)
+    // Byte 13:     SetGroupFlow (U8P4)
+    // Byte 14:     FrameNumber
+    // Byte 15:     SteamTemp (U8P0)
 
     m_pressure = BinaryCodec::decodeU8P4(static_cast<uint8_t>(data[2]));
     m_flow = BinaryCodec::decodeU8P4(static_cast<uint8_t>(data[3]));
-    m_mixTemp = BinaryCodec::decodeU8P1(static_cast<uint8_t>(data[4]));
-    m_headTemp = BinaryCodec::decodeU8P4(static_cast<uint8_t>(data[5])) + 73.0;
-    m_targetPressure = BinaryCodec::decodeU8P4(static_cast<uint8_t>(data[8]));
-    m_targetFlow = BinaryCodec::decodeU8P4(static_cast<uint8_t>(data[9]));
-    m_steamTemp = static_cast<double>(static_cast<uint8_t>(data[11]));
+    m_mixTemp = BinaryCodec::decodeU16P8(BinaryCodec::decodeShortBE(data, 4));
+    m_headTemp = BinaryCodec::decodeU16P8(BinaryCodec::decodeShortBE(data, 6));
+    m_targetPressure = BinaryCodec::decodeU8P4(static_cast<uint8_t>(data[12]));
+    m_targetFlow = BinaryCodec::decodeU8P4(static_cast<uint8_t>(data[13]));
+    m_steamTemp = static_cast<double>(static_cast<uint8_t>(data[15]));
 
     QJsonObject sample;
     sample["timestamp"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
@@ -277,7 +277,7 @@ void DE1Device::parseShotSample(const QByteArray &data)
     sample["targetPressure"] = m_targetPressure;
     sample["targetFlow"] = m_targetFlow;
     sample["steamTemperature"] = m_steamTemp;
-    sample["profileFrame"] = static_cast<int>(static_cast<uint8_t>(data[10]));
+    sample["profileFrame"] = static_cast<int>(static_cast<uint8_t>(data[14]));
 
     QJsonObject stateObj;
     stateObj["state"] = stateString();

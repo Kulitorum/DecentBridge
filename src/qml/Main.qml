@@ -149,7 +149,7 @@ ApplicationWindow {
                                 anchors.centerIn: parent
                                 Text {
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    text: bridge.de1Connected ? Math.round(bridge.groupTemp) + "\u00B0" : "--"
+                                    text: bridge.de1Connected ? bridge.groupTemp.toFixed(1) + "\u00B0" : "--"
                                     font.pixelSize: 28
                                     font.bold: true
                                     color: accentGreen
@@ -174,7 +174,7 @@ ApplicationWindow {
                                 anchors.centerIn: parent
                                 Text {
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    text: bridge.de1Connected ? Math.round(bridge.steamTemp) + "\u00B0" : "--"
+                                    text: bridge.de1Connected ? bridge.steamTemp.toFixed(1) + "\u00B0" : "--"
                                     font.pixelSize: 28
                                     font.bold: true
                                     color: textPrimary
