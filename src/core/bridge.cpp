@@ -159,6 +159,7 @@ void Bridge::connectToScale(const QBluetoothDeviceInfo &device)
     if (m_scaleConnecting) {
         qCWarning(lcBridge) << "Previous connection attempt stuck, cleaning up";
         if (m_scale) {
+            m_scale->disconnectFromScale();  // Explicitly disconnect BLE first
             m_scale->deleteLater();
             m_scale = nullptr;
         }
@@ -178,6 +179,7 @@ void Bridge::connectToScale(const QBluetoothDeviceInfo &device)
 
     // Clean up old scale if any
     if (m_scale) {
+        m_scale->disconnectFromScale();  // Explicitly disconnect BLE first
         m_scale->deleteLater();
     }
     m_scale = scale.release();

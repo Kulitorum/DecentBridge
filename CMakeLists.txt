@@ -132,11 +132,11 @@ list(APPEND HEADERS
 # Create executable (qt_add_executable handles Android APK generation)
 qt_add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
-# Add QML module for the UI
-qt_add_qml_module(${PROJECT_NAME}
-    URI DecentBridge
-    VERSION 1.0
-    QML_FILES
+# Add QML UI as resource
+qt_add_resources(${PROJECT_NAME} "qml"
+    PREFIX "/"
+    BASE src/qml
+    FILES
         src/qml/Main.qml
 )
 
@@ -164,6 +164,15 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 # Android specific
 if(ANDROID)
+    # Fetch OpenSSL for Android (fixes "No functional TLS backend" error)
+    include(FetchContent)
+    FetchContent_Declare(
+        android_openssl
+        URL https://github.com/KDAB/android_openssl/archive/refs/heads/master.zip
+    )
+    FetchContent_MakeAvailable(android_openssl)
+    include(${android_openssl_SOURCE_DIR}/android_openssl.cmake)
+
     set_target_properties(${PROJECT_NAME} PROPERTIES
         QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android"
         QT_ANDROID_SIGN_APK ON
@@ -172,6 +181,8 @@ if(ANDROID)
         QT_ANDROID_SIGN_KEY_STORE_PASSWORD "$ENV{ANDROID_KEYSTORE_PASSWORD}"
         QT_ANDROID_SIGN_KEY_PASSWORD "$ENV{ANDROID_KEYSTORE_PASSWORD}"
     )
+
+    add_android_openssl_libraries(${PROJECT_NAME})
 endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE

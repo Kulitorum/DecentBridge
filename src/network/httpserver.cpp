@@ -861,8 +861,9 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
         </div>
     </div>
 
-    <script>
-        let ws = null;
+    )HTML" R"HTML(<script>
+        let scaleWs = null;
+        let machineWs = null;
 
         async function fetchData() {
             try {
@@ -905,31 +906,17 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
                     }
                 }
 
-                // Fetch machine state
-                if (machine) {
-                    const stateRes = await fetch('/api/v1/machine/state');
-                    const state = await stateRes.json();
-
-                    const stateName = state.state?.state || '--';
-                    document.getElementById('machine-state').textContent = stateName;
-                    document.getElementById('machine-state').className = 'state-badge state-' + stateName;
-                    document.getElementById('group-temp').textContent = Math.round(state.groupTemperature || 0) + '°';
-                    document.getElementById('steam-temp').textContent = Math.round(state.steamTemperature || 0) + '°';
-                    document.getElementById('pressure').textContent = (state.pressure || 0).toFixed(1);
-                    document.getElementById('flow').textContent = (state.flow || 0).toFixed(1);
-                }
-
                 document.getElementById('error').textContent = '';
             } catch (e) {
                 document.getElementById('error').textContent = 'Connection error: ' + e.message;
             }
         }
 
-        function connectWebSocket() {
+        function connectScaleWebSocket() {
             const host = window.location.hostname;
-            ws = new WebSocket('ws://' + host + ':8081/ws/v1/scale/snapshot');
+            scaleWs = new WebSocket('ws://' + host + ':8081/ws/v1/scale/snapshot');
 
-            ws.onmessage = (event) => {
+            scaleWs.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
                     document.getElementById('weight').textContent = (data.weight || 0).toFixed(1);
@@ -937,8 +924,43 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
                 } catch (e) {}
             };
 
-            ws.onclose = () => setTimeout(connectWebSocket, 2000);
-            ws.onerror = () => ws.close();
+            scaleWs.onclose = () => setTimeout(connectScaleWebSocket, 2000);
+            scaleWs.onerror = () => scaleWs.close();
+        }
+
+        function connectMachineWebSocket() {
+            const host = window.location.hostname;
+            machineWs = new WebSocket('ws://' + host + ':8081/ws/v1/machine/snapshot');
+
+            machineWs.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    // Update machine metrics from real-time shot samples
+                    if (data.groupTemperature !== undefined) {
+                        document.getElementById('group-temp').textContent = Math.round(data.groupTemperature) + '°';
+                    }
+                    if (data.steamTemperature !== undefined) {
+                        document.getElementById('steam-temp').textContent = Math.round(data.steamTemperature) + '°';
+                    }
+                    if (data.pressure !== undefined) {
+                        document.getElementById('pressure').textContent = data.pressure.toFixed(1);
+                    }
+                    if (data.flow !== undefined) {
+                        document.getElementById('flow').textContent = data.flow.toFixed(1);
+                    }
+                    // Update state if present
+                    if (data.state?.state) {
+                        const stateName = data.state.state;
+                        document.getElementById('machine-state').textContent = stateName;
+                        document.getElementById('machine-state').className = 'state-badge state-' + stateName;
+                    }
+                    // Mark machine as connected
+                    document.getElementById('machine-status').className = 'status-dot connected';
+                } catch (e) {}
+            };
+
+            machineWs.onclose = () => setTimeout(connectMachineWebSocket, 2000);
+            machineWs.onerror = () => machineWs.close();
         }
 
         async function setState(state) {
@@ -1073,10 +1095,11 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
             }
         }
 
-        // Initial fetch and start polling
+        // Initial fetch and start polling (slower since WebSocket handles real-time data)
         fetchData();
-        setInterval(fetchData, 1000);
-        connectWebSocket();
+        setInterval(fetchData, 5000);
+        connectScaleWebSocket();
+        connectMachineWebSocket();
     </script>
 </body>
 </html>

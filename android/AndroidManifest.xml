@@ -48,7 +48,8 @@
             android:name="io.github.decentbridge.BridgeService"
             android:enabled="true"
             android:exported="false"
-            android:stopWithTask="false" />
+            android:stopWithTask="false"
+            android:foregroundServiceType="connectedDevice" />
 
     </application>
 

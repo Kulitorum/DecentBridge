@@ -120,20 +120,30 @@ void DE1Device::onServiceDiscoveryFinished()
             this, &DE1Device::onCharacteristicChanged);
     connect(m_service, &QLowEnergyService::characteristicRead,
             this, &DE1Device::onCharacteristicRead);
+    connect(m_service, &QLowEnergyService::descriptorWritten,
+            this, [](const QLowEnergyDescriptor &d, const QByteArray &value) {
+        qCInfo(lcDE1) << "[DE1] Descriptor written:" << d.uuid().toString() << "value:" << value.toHex();
+    });
 
-    m_service->discoverDetails();
+    // Use SkipValueDiscovery for fast connection - we'll read values we need explicitly
+    qCInfo(lcDE1) << "[DE1] Starting service details discovery (SkipValueDiscovery)";
+    m_service->discoverDetails(QLowEnergyService::SkipValueDiscovery);
 }
 
 void DE1Device::onServiceStateChanged(QLowEnergyService::ServiceState state)
 {
+    qCInfo(lcDE1) << "[DE1] Service state changed:" << static_cast<int>(state);
+
     if (state == QLowEnergyService::RemoteServiceDiscovered) {
-        qCInfo(lcDE1) << "Service details discovered";
+        qCInfo(lcDE1) << "[DE1] Service details discovered";
         setupService();
     }
 }
 
 void DE1Device::setupService()
 {
+    qCInfo(lcDE1) << "[DE1] setupService called";
+
     m_connecting = false;
     m_connected = true;
     emit connectingChanged(false);
@@ -165,26 +175,34 @@ void DE1Device::setupService()
 
 void DE1Device::subscribeToCharacteristics()
 {
-    auto enableNotify = [this](const QBluetoothUuid &uuid) {
+    qCInfo(lcDE1) << "[DE1] subscribeToCharacteristics called";
+
+    auto enableNotify = [this](const QBluetoothUuid &uuid, const QString &name) {
         auto characteristic = m_service->characteristic(uuid);
         if (characteristic.isValid()) {
             auto descriptor = characteristic.descriptor(
                 QBluetoothUuid::DescriptorType::ClientCharacteristicConfiguration);
             if (descriptor.isValid()) {
-                m_service->writeDescriptor(descriptor,
-                    QLowEnergyCharacteristic::CCCDEnableNotification);
+                qCInfo(lcDE1) << "[DE1] Enabling notifications for" << name;
+                m_service->writeDescriptor(descriptor, QByteArray::fromHex("0100"));
+            } else {
+                qCWarning(lcDE1) << "No CCCD descriptor for" << name;
             }
+        } else {
+            qCWarning(lcDE1) << "Characteristic not found:" << name;
         }
     };
 
-    enableNotify(DE1::Characteristic::STATE_INFO);
-    enableNotify(DE1::Characteristic::SHOT_SAMPLE);
-    enableNotify(DE1::Characteristic::WATER_LEVELS);
-    enableNotify(DE1::Characteristic::TEMPERATURES);
+    enableNotify(DE1::Characteristic::STATE_INFO, "STATE_INFO");
+    enableNotify(DE1::Characteristic::SHOT_SAMPLE, "SHOT_SAMPLE");
+    enableNotify(DE1::Characteristic::WATER_LEVELS, "WATER_LEVELS");
+    enableNotify(DE1::Characteristic::TEMPERATURES, "TEMPERATURES");
 }
 
 void DE1Device::onCharacteristicChanged(const QLowEnergyCharacteristic &c, const QByteArray &value)
 {
+    qCInfo(lcDE1) << "[DE1] Characteristic changed:" << c.uuid().toString() << "size:" << value.size();
+
     if (c.uuid() == DE1::Characteristic::STATE_INFO) {
         parseStateInfo(value);
     } else if (c.uuid() == DE1::Characteristic::SHOT_SAMPLE) {
@@ -226,6 +244,8 @@ void DE1Device::parseStateInfo(const QByteArray &data)
 void DE1Device::parseShotSample(const QByteArray &data)
 {
     if (data.size() < 15) return;
+
+    qCInfo(lcDE1) << "[DE1] Shot sample received, parsing...";
 
     // Parse shot sample (see DE1 protocol docs)
     // Bytes 0-1: Timer (uint16 BE, 0.01s units)

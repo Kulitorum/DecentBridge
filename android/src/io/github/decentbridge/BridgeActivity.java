@@ -13,17 +13,13 @@ public class BridgeActivity extends QtActivity {
         super.onCreate(savedInstanceState);
         Log.d(TAG, "BridgeActivity created");
 
-        // Start foreground service
+        // Start foreground service to keep app running in background
         BridgeService.start(this);
 
-        // Move to background after Qt initializes
-        getWindow().getDecorView().postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                Log.d(TAG, "Moving to background");
-                moveTaskToBack(true);
-            }
-        }, 3000);
+        // Note: Don't auto-minimize. Qt's QML engine requires the Activity's
+        // OpenGL surface. When the user presses Home, the foreground service
+        // keeps the app alive. Auto-calling moveTaskToBack() destroys the
+        // surface and causes Qt to fail, leading Android to kill the app.
     }
 
     @Override
