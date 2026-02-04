@@ -235,7 +235,7 @@ public:
     QString ipAddress() const { return m_ipAddress; }
     int httpPort() const { return m_settings->httpPort(); }
     int wsPort() const { return m_settings->webSocketPort(); }
-    QString version() const { return QStringLiteral("0.1.0"); }
+    QString version() const { return QStringLiteral(APP_VERSION); }
 
     // Connection status (cached)
     bool de1Connected() const { return m_de1Connected; }
@@ -370,7 +370,7 @@ int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
     app.setApplicationName("DecentBridge");
-    app.setApplicationVersion("0.1.0");
+    app.setApplicationVersion(APP_VERSION);
     app.setOrganizationName("DecentBridge");
 
     // Command line parsing

@@ -67,7 +67,7 @@ void DiscoveryService::onReadyRead()
             response["name"] = m_settings->bridgeName();
             response["httpPort"] = m_settings->httpPort();
             response["wsPort"] = m_settings->webSocketPort();
-            response["version"] = "0.1.0";
+            response["version"] = APP_VERSION;
 
             QByteArray responseData = QJsonDocument(response).toJson(QJsonDocument::Compact);
 

@@ -14,7 +14,7 @@ class Settings;
  *
  * Discovery protocol:
  *   Request:  "DECENTBRIDGE_DISCOVER"
- *   Response: JSON {"name": "...", "httpPort": 8080, "wsPort": 8081, "version": "0.1.0"}
+ *   Response: JSON {"name": "...", "httpPort": 8080, "wsPort": 8081, "version": "<APP_VERSION>"}
  */
 class DiscoveryService : public QObject
 {
