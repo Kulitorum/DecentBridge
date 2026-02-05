@@ -1,0 +1,89 @@
+{
+  "title": "Espresso Forge Light",
+  "author": "Decent",
+  "notes": "A light roast pressure profile that emulates the flow and temperature characteristics of the Espresso Forge manual machine. Good for medium to light roasts where you want to mute the fruit flavors and up extraction to balance the shot more in comparison to a standard flat or lever profile.",
+  "beverage_type": "espresso",
+  "steps": [
+    {
+      "name": "preinfusion",
+      "temperature": "96.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "1",
+      "flow": "6.0",
+      "seconds": "10.0",
+      "volume": "100",
+      "weight": "0",
+      "exit": {
+        "type": "pressure",
+        "condition": "over",
+        "value": "0.5"
+      }
+    },
+    {
+      "name": "long pre brew",
+      "temperature": "93.0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "smooth",
+      "pressure": "1.0",
+      "flow": "0",
+      "seconds": "25.0",
+      "volume": "100",
+      "weight": "0"
+    },
+    {
+      "name": "high pressure ramp",
+      "temperature": "93.0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "smooth",
+      "pressure": "10.0",
+      "flow": "0",
+      "seconds": "20.0",
+      "volume": "100",
+      "weight": "0",
+      "exit": {
+        "type": "pressure",
+        "condition": "over",
+        "value": "10.0"
+      }
+    },
+    {
+      "name": "decline",
+      "temperature": "92.5",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "smooth",
+      "pressure": "6.0",
+      "flow": "0",
+      "seconds": "50.0",
+      "volume": "100",
+      "weight": "0"
+    },
+    {
+      "name": "reset temperature",
+      "temperature": "96.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "smooth",
+      "pressure": "6.0",
+      "flow": "0.0",
+      "seconds": "1.0",
+      "volume": "100",
+      "weight": "0"
+    }
+  ],
+  "tank_temperature": "0",
+  "target_weight": "42",
+  "target_volume": "0",
+  "target_volume_count_start": "0",
+  "legacy_profile_type": "settings_2c",
+  "type": "advanced",
+  "lang": "en",
+  "hidden": "1",
+  "reference_file": "EspressoForge_Light",
+  "changes_since_last_espresso": "",
+  "version": "2"
+}

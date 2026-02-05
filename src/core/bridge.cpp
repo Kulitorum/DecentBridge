@@ -9,6 +9,7 @@
 #include "network/httpserver.h"
 #include "network/websocketserver.h"
 #include "network/discoveryservice.h"
+#include "core/skinmanager.h"
 
 #include <QLoggingCategory>
 #include <QTimer>
@@ -23,6 +24,7 @@ Bridge::Bridge(Settings *settings, QObject *parent)
     , m_httpServer(std::make_unique<HttpServer>(this))
     , m_wsServer(std::make_unique<WebSocketServer>(this))
     , m_discoveryService(std::make_unique<DiscoveryService>(settings))
+    , m_skinManager(std::make_unique<SkinManager>())
 {
     setupConnections();
 }
@@ -53,6 +55,15 @@ void Bridge::setupConnections()
             m_wsServer.get(), &WebSocketServer::broadcastMachineState);
     connect(m_de1.get(), &DE1Device::waterLevelsChanged,
             m_wsServer.get(), &WebSocketServer::broadcastWaterLevels);
+
+    // Forward WebSocket upgrade requests from HTTP port to WebSocket server
+    connect(m_httpServer.get(), &HttpServer::webSocketUpgradeRequested,
+            m_wsServer.get(), &WebSocketServer::handleUpgrade);
+
+    // When skin is ready, tell HTTP server where to serve static files from
+    connect(m_skinManager.get(), &SkinManager::skinReady, this, [this]() {
+        m_httpServer->setSkinRoot(m_skinManager->skinRootPath());
+    });
 }
 
 bool Bridge::start()
@@ -83,6 +94,9 @@ bool Bridge::start()
 
     // Start BLE scanning
     m_bleManager->startScan();
+
+    // Start skin manager (async download, non-blocking)
+    m_skinManager->initialize();
 
     m_running = true;
     emit started();

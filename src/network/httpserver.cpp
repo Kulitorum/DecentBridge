@@ -12,6 +12,12 @@
 #include <QLoggingCategory>
 #include <QUrlQuery>
 #include <QFile>
+#include <QFileInfo>
+#include <QDir>
+#include <QRegularExpression>
+#include <QSet>
+#include <QStandardPaths>
+#include <QUrl>
 
 Q_LOGGING_CATEGORY(lcHttp, "bridge.http")
 
@@ -20,6 +26,7 @@ HttpServer::HttpServer(Bridge *bridge, QObject *parent)
     , m_bridge(bridge)
 {
     setupRoutes();
+    ensureDefaultProfiles();
 }
 
 HttpServer::~HttpServer()
@@ -71,17 +78,22 @@ void HttpServer::setupRoutes()
     m_getRoutes["/api/v1/machine/waterLevels"] = [this](auto& req, auto& res) { handleGetWaterLevels(req, res); };
     m_getRoutes["/api/v1/settings"] = [this](auto& req, auto& res) { handleGetSettings(req, res); };
     m_getRoutes["/api/v1/sensors"] = [this](auto& req, auto& res) { handleGetSensors(req, res); };
+    m_getRoutes["/api/v1/workflow"] = [this](auto& req, auto& res) { handleGetWorkflow(req, res); };
+    m_getRoutes["/api/v1/profiles"] = [this](auto& req, auto& res) { handleGetProfiles(req, res); };
+    m_getRoutes["/api/v1/shots"] = [this](auto& req, auto& res) { handleGetShots(req, res); };
 
     // POST routes
     m_postRoutes["/api/v1/machine/profile"] = [this](auto& req, auto& res) { handlePostProfile(req, res); };
     m_postRoutes["/api/v1/machine/settings"] = [this](auto& req, auto& res) { handlePostMachineSettings(req, res); };
     m_postRoutes["/api/v1/machine/shotSettings"] = [this](auto& req, auto& res) { handlePostShotSettings(req, res); };
     m_postRoutes["/api/v1/settings"] = [this](auto& req, auto& res) { handlePostSettings(req, res); };
+    m_postRoutes["/api/v1/profiles"] = [this](auto& req, auto& res) { handlePostProfiles(req, res); };
 
     // PUT routes
     m_putRoutes["/api/v1/devices/connect"] = [this](auto& req, auto& res) { handleConnectDevice(req, res); };
     m_putRoutes["/api/v1/scale/tare"] = [this](auto& req, auto& res) { handleTareScale(req, res); };
     m_putRoutes["/api/v1/scale/disconnect"] = [this](auto& req, auto& res) { handleDisconnectScale(req, res); };
+    m_putRoutes["/api/v1/workflow"] = [this](auto& req, auto& res) { handlePutWorkflow(req, res); };
 }
 
 bool HttpServer::start(int port)
@@ -127,6 +139,30 @@ void HttpServer::onReadyRead()
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
+    // For new sockets, peek first to detect WebSocket upgrade requests.
+    // peek() does NOT consume data, so QWebSocketServer can read it later.
+    if (!m_socketBuffers.contains(socket)) {
+        QByteArray peeked = socket->peek(socket->bytesAvailable());
+        int headerEnd = peeked.indexOf("\r\n\r\n");
+
+        if (headerEnd != -1) {
+            // Complete headers available - check for WebSocket upgrade
+            QByteArray headerBlock = peeked.left(headerEnd).toLower();
+            if (headerBlock.contains("upgrade: websocket")) {
+                // Hand off to WebSocket server without consuming data
+                disconnect(socket, &QTcpSocket::readyRead, this, &HttpServer::onReadyRead);
+                disconnect(socket, &QTcpSocket::disconnected, this, &HttpServer::onDisconnected);
+                emit webSocketUpgradeRequested(socket);
+                return;
+            }
+            // Not a WebSocket upgrade - fall through to normal HTTP
+        } else if (peeked.size() < 8192) {
+            // Headers not complete yet, wait for more data
+            return;
+        }
+        // Headers complete or too large - proceed with normal HTTP
+    }
+
     m_socketBuffers[socket] += socket->readAll();
     QByteArray &data = m_socketBuffers[socket];
 
@@ -154,7 +190,7 @@ void HttpServer::onReadyRead()
         HttpResponse response;
         response.setError(400, "Bad Request");
         socket->write(response.toBytes());
-        socket->close();
+        socket->disconnectFromHost();
         m_socketBuffers.remove(socket);
         return;
     }
@@ -189,10 +225,10 @@ bool HttpServer::parseRequest(const QByteArray &data, HttpRequest &request)
     // Split path and query
     int queryIdx = fullPath.indexOf('?');
     if (queryIdx != -1) {
-        request.path = fullPath.left(queryIdx);
+        request.path = QUrl::fromPercentEncoding(fullPath.left(queryIdx).toUtf8());
         request.query = fullPath.mid(queryIdx + 1);
     } else {
-        request.path = fullPath;
+        request.path = QUrl::fromPercentEncoding(fullPath.toUtf8());
     }
 
     // Parse headers
@@ -221,7 +257,7 @@ void HttpServer::handleRequest(QTcpSocket *socket, const HttpRequest &request)
 
     HttpResponse response;
     response.headers["Access-Control-Allow-Origin"] = "*";
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS";
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
     response.headers["Access-Control-Allow-Headers"] = "Content-Type";
 
     // Handle CORS preflight
@@ -229,7 +265,7 @@ void HttpServer::handleRequest(QTcpSocket *socket, const HttpRequest &request)
         response.statusCode = 204;
         response.statusText = "No Content";
         socket->write(response.toBytes());
-        socket->close();
+        socket->disconnectFromHost();
         return;
     }
 
@@ -242,32 +278,80 @@ void HttpServer::handleRequest(QTcpSocket *socket, const HttpRequest &request)
             QString sensorId = request.path.section('/', -1);
             handleGetSensorById(request, response, sensorId);
             socket->write(response.toBytes());
-            socket->close();
+            socket->disconnectFromHost();
+            return;
+        }
+        // Check for store pattern: /api/v1/store/:namespace/:key
+        if (request.path.startsWith("/api/v1/store/")) {
+            QStringList parts = request.path.mid(14).split('/'); // strip "/api/v1/store/"
+            if (parts.size() == 2 && !parts[0].isEmpty() && !parts[1].isEmpty()) {
+                handleGetStore(request, response, parts[0], parts[1]);
+                socket->write(response.toBytes());
+                socket->disconnectFromHost();
+                return;
+            }
+        }
+        // Check for profile by ID pattern: /api/v1/profiles/:id
+        if (request.path.startsWith("/api/v1/profiles/") && request.path != "/api/v1/profiles") {
+            QString profileId = request.path.mid(17); // strip "/api/v1/profiles/"
+            handleGetProfileById(request, response, profileId);
+            socket->write(response.toBytes());
+            socket->disconnectFromHost();
             return;
         }
         handler = m_getRoutes.value(request.path);
     } else if (request.method == "POST") {
+        // Check for store pattern: /api/v1/store/:namespace/:key
+        if (request.path.startsWith("/api/v1/store/")) {
+            QStringList parts = request.path.mid(14).split('/');
+            if (parts.size() == 2 && !parts[0].isEmpty() && !parts[1].isEmpty()) {
+                handlePostStore(request, response, parts[0], parts[1]);
+                socket->write(response.toBytes());
+                socket->disconnectFromHost();
+                return;
+            }
+        }
         handler = m_postRoutes.value(request.path);
     } else if (request.method == "PUT") {
+        // Dev: update skin file: PUT /api/v1/dev/skin/{filepath}
+        if (request.path.startsWith("/api/v1/dev/skin/")) {
+            QString filePath = request.path.mid(17); // strip "/api/v1/dev/skin/"
+            handlePutDevSkin(request, response, filePath);
+            socket->write(response.toBytes());
+            socket->disconnectFromHost();
+            return;
+        }
         // Check for state change pattern: /api/v1/machine/state/:newState
         if (request.path.startsWith("/api/v1/machine/state/")) {
             handleSetMachineState(request, response);
             socket->write(response.toBytes());
-            socket->close();
+            socket->disconnectFromHost();
             return;
         }
         handler = m_putRoutes.value(request.path);
+    } else if (request.method == "DELETE") {
+        // DELETE /api/v1/profiles/:id
+        if (request.path.startsWith("/api/v1/profiles/") && request.path != "/api/v1/profiles") {
+            QString profileId = request.path.mid(17);
+            handleDeleteProfile(request, response, profileId);
+            socket->write(response.toBytes());
+            socket->disconnectFromHost();
+            return;
+        }
     }
 
     if (handler) {
         handler(request, response);
+    } else if (request.method == "GET" && !m_skinRoot.isEmpty() &&
+               serveStaticFile(request, response)) {
+        // Static file served from skin directory
     } else {
         qCWarning(lcHttp) << "No route for:" << request.method << request.path;
         response.setError(404, "Not Found");
     }
 
     socket->write(response.toBytes());
-    socket->close();
+    socket->disconnectFromHost();
 }
 
 // Response helpers
@@ -294,6 +378,7 @@ QByteArray HttpServer::HttpResponse::toBytes() const
         result += QString("%1: %2\r\n").arg(it.key(), it.value()).toUtf8();
     }
     result += QString("Content-Length: %1\r\n").arg(body.size()).toUtf8();
+    result += "Connection: close\r\n";
     result += "\r\n";
     result += body;
     return result;
@@ -810,11 +895,39 @@ void HttpServer::handleDashboard(const HttpRequest &, HttpResponse &res)
             margin-top: 30px;
         }
         .api-info a { color: #00d9ff; }
+
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+            h1 { font-size: 1.6em; margin-bottom: 20px; }
+            .card { padding: 14px; margin-bottom: 14px; border-radius: 12px; }
+            .card h2 { font-size: 1em; }
+            .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .metric { padding: 10px; }
+            .metric .value { font-size: 1.4em; }
+            .metric .label { font-size: 0.75em; }
+            .state-badge { font-size: 0.95em; padding: 6px 12px; }
+            button { padding: 10px 16px; font-size: 0.9em; }
+            .buttons { gap: 8px; }
+        }
+
+        @media (max-width: 360px) {
+            body { padding: 6px; }
+            h1 { font-size: 1.3em; margin-bottom: 14px; }
+            .card { padding: 10px; }
+            .grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+            .metric .value { font-size: 1.2em; }
+            button { padding: 8px 12px; font-size: 0.85em; }
+        }
+
+        @media (min-width: 1200px) {
+            .container { max-width: 1000px; }
+            .grid { grid-template-columns: repeat(4, 1fr); }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>DecentBridge <span style="font-size:0.4em;background:rgba(255,255,255,0.1);padding:0.2em 0.6em;border-radius:1em;vertical-align:middle;">v0.1.0</span></h1>
+        <h1>DecentBridge <span style="font-size:0.4em;background:rgba(255,255,255,0.1);padding:0.2em 0.6em;border-radius:1em;vertical-align:middle;white-space:nowrap;">v0.1.0</span></h1>
 
         <div id="error"></div>
 
@@ -1173,4 +1286,383 @@ void HttpServer::handleFavicon(const HttpRequest &, HttpResponse &res)
     } else {
         res.setError(404, "Favicon not found");
     }
+}
+
+// Dev: upload a file to the skin cache
+void HttpServer::handlePutDevSkin(const HttpRequest &req, HttpResponse &res, const QString &filePath)
+{
+    if (m_skinRoot.isEmpty()) {
+        res.setError(503, "No skin root configured");
+        return;
+    }
+
+    if (filePath.isEmpty() || filePath.contains("..")) {
+        res.setError(400, "Invalid path");
+        return;
+    }
+
+    QString fullPath = m_skinRoot + "/" + filePath;
+
+    // Create parent directories if needed
+    QFileInfo fi(fullPath);
+    QDir().mkpath(fi.absolutePath());
+
+    QFile file(fullPath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        res.setError(500, "Failed to write: " + filePath);
+        return;
+    }
+
+    file.write(req.body);
+    file.close();
+
+    qCInfo(lcHttp) << "Dev skin update:" << filePath << "(" << req.body.size() << "bytes)";
+    res.setJson("{}");
+}
+
+// Static file serving for WebUI skin
+void HttpServer::setSkinRoot(const QString &path)
+{
+    m_skinRoot = path;
+    if (!path.isEmpty()) {
+        // Remove the inline dashboard route so "/" falls through to static serving
+        m_getRoutes.remove("/");
+        qCInfo(lcHttp) << "Serving skin from:" << path;
+    }
+}
+
+bool HttpServer::serveStaticFile(const HttpRequest &req, HttpResponse &res)
+{
+    QString path = req.path;
+
+    // Prevent directory traversal
+    if (path.contains("..")) return false;
+
+    // Serve index.html for root or directory requests
+    if (path == "/") {
+        path = "/index.html";
+    }
+
+    QString filePath = m_skinRoot + path;
+    QFileInfo fi(filePath);
+
+    if (fi.isDir()) {
+        filePath += "/index.html";
+        fi = QFileInfo(filePath);
+    }
+
+    if (!fi.exists() || !fi.isFile()) return false;
+
+    // Security: ensure resolved path is within skin root
+    QString canonical = fi.canonicalFilePath();
+    if (!canonical.startsWith(QDir(m_skinRoot).canonicalPath())) return false;
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) return false;
+
+    res.headers["Content-Type"] = guessMimeType(filePath);
+    res.headers["Cache-Control"] = "public, max-age=3600";
+    res.body = file.readAll();
+    return true;
+}
+
+QString HttpServer::guessMimeType(const QString &filename) const
+{
+    static const QMap<QString, QString> mimeTypes = {
+        {"html", "text/html; charset=utf-8"},
+        {"htm",  "text/html; charset=utf-8"},
+        {"css",  "text/css; charset=utf-8"},
+        {"js",   "application/javascript; charset=utf-8"},
+        {"mjs",  "application/javascript; charset=utf-8"},
+        {"json", "application/json"},
+        {"png",  "image/png"},
+        {"jpg",  "image/jpeg"},
+        {"jpeg", "image/jpeg"},
+        {"gif",  "image/gif"},
+        {"svg",  "image/svg+xml"},
+        {"ico",  "image/x-icon"},
+        {"webp", "image/webp"},
+        {"woff", "font/woff"},
+        {"woff2","font/woff2"},
+        {"ttf",  "font/ttf"},
+        {"otf",  "font/otf"},
+        {"eot",  "application/vnd.ms-fontobject"},
+        {"map",  "application/json"},
+        {"txt",  "text/plain; charset=utf-8"},
+        {"xml",  "application/xml"},
+        {"csv",  "text/csv; charset=utf-8"},
+    };
+
+    QString ext = QFileInfo(filename).suffix().toLower();
+    return mimeTypes.value(ext, "application/octet-stream");
+}
+
+// Key-value store directory
+QString HttpServer::storeDir() const
+{
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/store";
+}
+
+// Route handlers - Key-value store
+void HttpServer::handleGetStore(const HttpRequest &, HttpResponse &res, const QString &ns, const QString &key)
+{
+    QString filePath = storeDir() + "/" + ns + "/" + key + ".json";
+    QFile file(filePath);
+
+    if (!file.exists()) {
+        // Return null for missing keys (skin expects this, not a 404)
+        res.setJson("null");
+        return;
+    }
+
+    if (!file.open(QIODevice::ReadOnly)) {
+        res.setError(500, "Failed to read store");
+        return;
+    }
+
+    res.headers["Content-Type"] = "application/json";
+    res.body = file.readAll();
+}
+
+void HttpServer::handlePostStore(const HttpRequest &req, HttpResponse &res, const QString &ns, const QString &key)
+{
+    QString dir = storeDir() + "/" + ns;
+    QDir().mkpath(dir);
+
+    QString filePath = dir + "/" + key + ".json";
+    QFile file(filePath);
+
+    if (!file.open(QIODevice::WriteOnly)) {
+        res.setError(500, "Failed to write store");
+        return;
+    }
+
+    file.write(req.body);
+    file.close();
+
+    res.setJson("{}");
+}
+
+// Route handlers - Workflow
+void HttpServer::handleGetWorkflow(const HttpRequest &, HttpResponse &res)
+{
+    QString filePath = storeDir() + "/workflow.json";
+    QFile file(filePath);
+
+    if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
+        // Return empty workflow object
+        res.setJson("{}");
+        return;
+    }
+
+    res.headers["Content-Type"] = "application/json";
+    res.body = file.readAll();
+}
+
+void HttpServer::handlePutWorkflow(const HttpRequest &req, HttpResponse &res)
+{
+    QDir().mkpath(storeDir());
+
+    QString filePath = storeDir() + "/workflow.json";
+    QFile file(filePath);
+
+    if (!file.open(QIODevice::WriteOnly)) {
+        res.setError(500, "Failed to write workflow");
+        return;
+    }
+
+    file.write(req.body);
+    file.close();
+
+    // If the workflow contains a profile, upload it to the DE1
+    QJsonDocument doc = QJsonDocument::fromJson(req.body);
+    QJsonObject obj = doc.object();
+    QJsonObject profile = obj["profile"].toObject();
+
+    if (!profile.isEmpty() && profile.contains("steps") && m_bridge->de1() && m_bridge->de1()->isConnected()) {
+        // Wake from sleep if needed
+        if (m_bridge->de1()->state() == DE1::State::Sleep) {
+            m_bridge->de1()->requestState(DE1::State::Idle);
+        }
+
+        m_bridge->de1()->uploadProfile(profile);
+    }
+
+    res.setJson("{}");
+}
+
+// Profiles directory (on-disk, writable)
+QString HttpServer::profilesDir() const
+{
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/profiles";
+}
+
+// Copy bundled default profiles to disk if not already present
+void HttpServer::ensureDefaultProfiles()
+{
+    QString dir = profilesDir();
+    QDir().mkpath(dir);
+
+    QDir resourceDir(":/assets/profiles");
+    for (const QString &filename : resourceDir.entryList({"*.json"})) {
+        if (filename == "manifest.json") continue;
+
+        QString destPath = dir + "/" + filename;
+        if (!QFile::exists(destPath)) {
+            QFile::copy(":/assets/profiles/" + filename, destPath);
+            // Qt resource copies are read-only — make writable
+            QFile::setPermissions(destPath, QFile::ReadOwner | QFile::WriteOwner);
+        }
+    }
+}
+
+// Route handlers - Profiles
+void HttpServer::handleGetProfiles(const HttpRequest &, HttpResponse &res)
+{
+    ensureDefaultProfiles();
+
+    // Build set of default profile filenames for the "isDefault" flag
+    QSet<QString> defaults;
+    QFile manifest(":/assets/profiles/manifest.json");
+    if (manifest.open(QIODevice::ReadOnly)) {
+        QJsonArray arr = QJsonDocument::fromJson(manifest.readAll()).object()["profiles"].toArray();
+        for (const auto &v : arr)
+            defaults.insert(v.toString());
+    }
+
+    QJsonArray profiles;
+    QDir dir(profilesDir());
+    for (const QFileInfo &fi : dir.entryInfoList({"*.json"}, QDir::Files)) {
+        if (fi.fileName() == "manifest.json") continue;
+
+        QFile file(fi.absoluteFilePath());
+        if (!file.open(QIODevice::ReadOnly)) continue;
+
+        QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+        if (!doc.isObject()) continue;
+
+        QJsonObject profile = doc.object();
+        QString id = fi.completeBaseName(); // filename without .json
+
+        // Wrap in ProfileRecord format expected by skin:
+        // { id, profile: {...}, visibility, isDefault, createdAt, updatedAt }
+        QJsonObject record;
+        record["id"] = id;
+        record["profile"] = profile;
+        record["visibility"] = QStringLiteral("visible");
+        record["isDefault"] = defaults.contains(fi.fileName());
+        QString timestamp = QDateTime::fromMSecsSinceEpoch(
+            fi.lastModified().toMSecsSinceEpoch()).toUTC().toString(Qt::ISODate);
+        record["createdAt"] = timestamp;
+        record["updatedAt"] = timestamp;
+        profiles.append(record);
+    }
+
+    res.setJson(QJsonDocument(profiles).toJson(QJsonDocument::Compact));
+}
+
+void HttpServer::handleGetProfileById(const HttpRequest &, HttpResponse &res, const QString &id)
+{
+    ensureDefaultProfiles();
+
+    // Sanitize id - no path separators
+    if (id.contains('/') || id.contains('\\') || id.contains("..")) {
+        res.setError(400, "Invalid profile id");
+        return;
+    }
+
+    QString filePath = profilesDir() + "/" + id + ".json";
+    QFile file(filePath);
+
+    if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
+        res.setError(404, "Profile not found");
+        return;
+    }
+
+    QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    QFileInfo fi(filePath);
+
+    // Wrap in ProfileRecord format
+    QJsonObject record;
+    record["id"] = id;
+    record["profile"] = doc.object();
+    record["visibility"] = QStringLiteral("visible");
+    record["isDefault"] = QFile::exists(":/assets/profiles/" + id + ".json");
+    QString timestamp = QDateTime::fromMSecsSinceEpoch(
+        fi.lastModified().toMSecsSinceEpoch()).toUTC().toString(Qt::ISODate);
+    record["createdAt"] = timestamp;
+    record["updatedAt"] = timestamp;
+
+    res.setJson(QJsonDocument(record).toJson(QJsonDocument::Compact));
+}
+
+void HttpServer::handlePostProfiles(const HttpRequest &req, HttpResponse &res)
+{
+    QJsonParseError error;
+    QJsonDocument doc = QJsonDocument::fromJson(req.body, &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+        res.setError(400, "Invalid JSON");
+        return;
+    }
+
+    QJsonObject profile = doc.object();
+    QString title = profile["title"].toString();
+    if (title.isEmpty()) {
+        res.setError(400, "Profile must have a title");
+        return;
+    }
+
+    // Generate filename from title (sanitize)
+    QString filename = title;
+    filename.replace(QRegularExpression("[^a-zA-Z0-9_\\- ()']"), "_");
+    filename = filename.trimmed();
+    if (filename.isEmpty()) filename = "Untitled";
+
+    QString dir = profilesDir();
+    QDir().mkpath(dir);
+
+    QString filePath = dir + "/" + filename + ".json";
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        res.setError(500, "Failed to save profile");
+        return;
+    }
+
+    file.write(doc.toJson(QJsonDocument::Indented));
+    file.close();
+
+    QJsonObject result;
+    result["id"] = filename;
+    result["title"] = title;
+    res.setJson(QJsonDocument(result).toJson(QJsonDocument::Compact));
+}
+
+void HttpServer::handleDeleteProfile(const HttpRequest &, HttpResponse &res, const QString &id)
+{
+    if (id.contains('/') || id.contains('\\') || id.contains("..")) {
+        res.setError(400, "Invalid profile id");
+        return;
+    }
+
+    // Check if it's a default profile (protected)
+    QString resourcePath = ":/assets/profiles/" + id + ".json";
+    if (QFile::exists(resourcePath)) {
+        res.setError(403, "Cannot delete default profile");
+        return;
+    }
+
+    QString filePath = profilesDir() + "/" + id + ".json";
+    if (!QFile::exists(filePath)) {
+        res.setError(404, "Profile not found");
+        return;
+    }
+
+    QFile::remove(filePath);
+    res.setJson("{}");
+}
+
+// Route handlers - Shots (stub)
+void HttpServer::handleGetShots(const HttpRequest &, HttpResponse &res)
+{
+    res.setJson("[]");
 }

@@ -201,7 +201,7 @@ void DE1Device::subscribeToCharacteristics()
 
 void DE1Device::onCharacteristicChanged(const QLowEnergyCharacteristic &c, const QByteArray &value)
 {
-    qCInfo(lcDE1) << "[DE1] Characteristic changed:" << c.uuid().toString() << "size:" << value.size();
+    qCDebug(lcDE1) << "[DE1] Characteristic changed:" << c.uuid().toString() << "size:" << value.size();
 
     if (c.uuid() == DE1::Characteristic::STATE_INFO) {
         parseStateInfo(value);
@@ -245,7 +245,7 @@ void DE1Device::parseShotSample(const QByteArray &data)
 {
     if (data.size() < 16) return;
 
-    qCInfo(lcDE1) << "[DE1] Shot sample received, parsing...";
+    qCDebug(lcDE1) << "[DE1] Shot sample received, parsing...";
 
     // Parse shot sample (DE1 T_ShotSample BLE characteristic)
     // Bytes 0-1:   Timer (uint16 BE, 0.01s units)

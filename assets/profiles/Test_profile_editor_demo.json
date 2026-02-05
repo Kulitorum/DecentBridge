@@ -1,0 +1,72 @@
+{
+  "title": "Test/profile_editor_demo",
+  "author": "Damian",
+  "notes": "{THIS IS NOT AN EDITABLE PROFILE - Although it will run a copy of D-FLow Q.",
+  "beverage_type": "calibrate",
+  "steps": [
+    {
+      "name": "Filling",
+      "temperature": "84.0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "fast",
+      "pressure": "6.0",
+      "flow": "8",
+      "seconds": "25.00",
+      "volume": "60.00",
+      "weight": "0.00",
+      "exit": {
+        "type": "pressure",
+        "condition": "over",
+        "value": "3.0"
+      },
+      "limiter": {
+        "value": "0",
+        "range": "0.2"
+      }
+    },
+    {
+      "name": "Infusing",
+      "temperature": "94.0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "fast",
+      "pressure": "6.0",
+      "flow": "8",
+      "seconds": "1.0",
+      "volume": "100.00",
+      "weight": "0.0",
+      "limiter": {
+        "value": "0",
+        "range": "0.2"
+      }
+    },
+    {
+      "name": "Pouring",
+      "temperature": "94.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "4.8",
+      "flow": "1.8",
+      "seconds": "127",
+      "volume": "100",
+      "weight": "0.00",
+      "limiter": {
+        "value": "10.0",
+        "range": "0.2"
+      }
+    }
+  ],
+  "tank_temperature": "0",
+  "target_weight": "0",
+  "target_volume": "0",
+  "target_volume_count_start": "0",
+  "legacy_profile_type": "settings_2c",
+  "type": "advanced",
+  "lang": "en",
+  "hidden": "0",
+  "reference_file": "Test_profile_editor_demo",
+  "changes_since_last_espresso": "",
+  "version": "2"
+}

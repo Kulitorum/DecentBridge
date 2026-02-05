@@ -7,6 +7,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLoggingCategory>
+#include <QTcpSocket>
 #include <QUrl>
 
 Q_LOGGING_CATEGORY(lcWebSocket, "bridge.websocket")
@@ -62,6 +63,18 @@ void WebSocketServer::stop()
         delete m_server;
         m_server = nullptr;
     }
+}
+
+void WebSocketServer::handleUpgrade(QTcpSocket *socket)
+{
+    if (!m_server) {
+        qCWarning(lcWebSocket) << "WebSocket server not running, rejecting upgrade";
+        socket->disconnectFromHost();
+        return;
+    }
+
+    qCDebug(lcWebSocket) << "Handling WebSocket upgrade from HTTP port";
+    m_server->handleConnection(socket);
 }
 
 void WebSocketServer::onNewConnection()

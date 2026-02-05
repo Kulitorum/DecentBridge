@@ -4,17 +4,19 @@
 #include <QObject>
 #include <QUdpSocket>
 
+#include <qmdnsengine/server.h>
+#include <qmdnsengine/hostname.h>
+#include <qmdnsengine/provider.h>
+#include <qmdnsengine/service.h>
+
 class Settings;
 
 /**
- * @brief UDP-based discovery service for DecentBridge
+ * @brief Discovery service for DecentBridge (UDP + mDNS)
  *
- * Listens for discovery broadcasts on port 19741 and responds with
- * bridge information (name, HTTP port, WebSocket port).
- *
- * Discovery protocol:
- *   Request:  "DECENTBRIDGE_DISCOVER"
- *   Response: JSON {"name": "...", "httpPort": 8080, "wsPort": 8081, "version": "<APP_VERSION>"}
+ * Provides two discovery mechanisms:
+ * 1. Custom UDP protocol on port 19741 (legacy)
+ * 2. mDNS/Zeroconf advertisement as _decentbridge._tcp
  */
 class DiscoveryService : public QObject
 {
@@ -35,8 +37,17 @@ private slots:
     void onReadyRead();
 
 private:
+    void startMdns();
+    void stopMdns();
+    static QString localIpAddress();
+
     Settings *m_settings;
     QUdpSocket *m_socket = nullptr;
+
+    // mDNS
+    QMdnsEngine::Server *m_mdnsServer = nullptr;
+    QMdnsEngine::Hostname *m_mdnsHostname = nullptr;
+    QMdnsEngine::Provider *m_mdnsProvider = nullptr;
 };
 
 #endif // DISCOVERYSERVICE_H

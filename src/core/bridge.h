@@ -13,6 +13,7 @@ class SensorDevice;
 class HttpServer;
 class WebSocketServer;
 class DiscoveryService;
+class SkinManager;
 
 /**
  * @brief Main bridge orchestrator
@@ -84,6 +85,7 @@ private:
     std::unique_ptr<HttpServer> m_httpServer;
     std::unique_ptr<WebSocketServer> m_wsServer;
     std::unique_ptr<DiscoveryService> m_discoveryService;
+    std::unique_ptr<SkinManager> m_skinManager;
 
     bool m_running = false;
     bool m_scaleConnecting = false; // Prevents multiple simultaneous connection attempts

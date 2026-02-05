@@ -18,6 +18,7 @@
 #include <QNetworkInterface>
 #include <QThread>
 #include <QUrl>
+#include <QDesktopServices>
 #include <QBluetoothDeviceInfo>
 #include <QVariantList>
 #include <QVariantMap>
@@ -439,23 +440,12 @@ int main(int argc, char *argv[])
     // its own event loop that Android doesn't touch.
     BridgeThread bridgeThread(&settings);
 
-    // When Bridge is ready on the worker thread, set up QML on the main thread.
-    // Qt::QueuedConnection ensures the lambda runs on the main thread.
+    // When Bridge is ready on the worker thread, open the web UI in the browser.
+    // No QML engine needed on Android — the web skin is the UI and skipping QML
+    // avoids GPU rendering errors when the Activity goes to background.
     QObject::connect(&bridgeThread, &BridgeThread::bridgeReady, &app,
-                     [&app, &settings](Bridge *bridge) {
-        auto *controller = new BridgeController(bridge, &settings, &app);
-
-        // Android uses the default OpenGL ES renderer (Software renderer fails on EGL)
-        auto *engine = new QQmlApplicationEngine(&app);
-        engine->rootContext()->setContextProperty("bridge", controller);
-
-        const QUrl url(QStringLiteral("qrc:/Main.qml"));
-        QObject::connect(engine, &QQmlApplicationEngine::objectCreated,
-                         &app, [url](QObject *obj, const QUrl &objUrl) {
-            if (!obj && url == objUrl)
-                QCoreApplication::exit(-1);
-        }, Qt::QueuedConnection);
-        engine->load(url);
+                     [&settings]() {
+        QDesktopServices::openUrl(QUrl(QStringLiteral("http://localhost:%1").arg(settings.httpPort())));
     }, Qt::QueuedConnection);
 
     bridgeThread.start();
@@ -481,6 +471,9 @@ int main(int argc, char *argv[])
     }
 
     BridgeController controller(&bridge, &settings);
+
+    // Open the web UI in the default browser
+    QDesktopServices::openUrl(QUrl(QStringLiteral("http://localhost:%1").arg(settings.httpPort())));
 
     QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
     QQmlApplicationEngine engine;

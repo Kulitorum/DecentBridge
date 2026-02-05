@@ -1,0 +1,60 @@
+{
+  "title": "Gentle flat 2.5 ml per second",
+  "author": "Decent",
+  "notes": "Created by French barista Adrien Sénac of Cafeism, this innovative technique allowed Adrien to produce excellent shots from very aromatic, lightly roasted beans that he had never before managed to successfully pull.",
+  "beverage_type": "espresso",
+  "steps": [
+    {
+      "name": "preinfusion",
+      "temperature": "92.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "1",
+      "flow": "4.2",
+      "seconds": "6",
+      "volume": "0",
+      "weight": "0",
+      "exit": {
+        "type": "pressure",
+        "condition": "over",
+        "value": "6"
+      }
+    },
+    {
+      "name": "hold",
+      "temperature": "92.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "",
+      "flow": "2.5",
+      "seconds": "2",
+      "volume": "0",
+      "weight": "0"
+    },
+    {
+      "name": "decline",
+      "temperature": "92.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "smooth",
+      "pressure": "",
+      "flow": "1",
+      "seconds": "23",
+      "volume": "0",
+      "weight": "0"
+    }
+  ],
+  "tank_temperature": "0",
+  "target_weight": "36",
+  "target_volume": "0",
+  "target_volume_count_start": "0",
+  "legacy_profile_type": "settings_2b",
+  "type": "flow",
+  "lang": "en",
+  "hidden": "1",
+  "reference_file": "Gentle flat 2.5 ml per second",
+  "changes_since_last_espresso": "",
+  "version": "2"
+}

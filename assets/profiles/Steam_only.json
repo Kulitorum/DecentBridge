@@ -1,0 +1,60 @@
+{
+  "title": "Steam only",
+  "author": "Decent",
+  "notes": "Fast heating of steam, not heating for espresso.   You might want to do this if you only want to steam, not brew. Perhaps you are making hot chocolate, an ice cream custard, or de-wrinkling your clothes with the steam wand.",
+  "beverage_type": "espresso",
+  "steps": [
+    {
+      "name": "preinfusion",
+      "temperature": "0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "1",
+      "flow": "7.5",
+      "seconds": "0",
+      "volume": "0",
+      "weight": "0",
+      "exit": {
+        "type": "pressure",
+        "condition": "over",
+        "value": "3.8"
+      }
+    },
+    {
+      "name": "rise and hold",
+      "temperature": "0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "fast",
+      "pressure": "7.8",
+      "flow": "",
+      "seconds": "12",
+      "volume": "0",
+      "weight": "0"
+    },
+    {
+      "name": "decline",
+      "temperature": "0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "smooth",
+      "pressure": "5.0",
+      "flow": "",
+      "seconds": "0",
+      "volume": "0",
+      "weight": "0"
+    }
+  ],
+  "tank_temperature": "0",
+  "target_weight": "0",
+  "target_volume": "30.0",
+  "target_volume_count_start": "1",
+  "legacy_profile_type": "settings_2a",
+  "type": "pressure",
+  "lang": "en",
+  "hidden": "1",
+  "reference_file": "Steam_only",
+  "changes_since_last_espresso": "",
+  "version": "2"
+}

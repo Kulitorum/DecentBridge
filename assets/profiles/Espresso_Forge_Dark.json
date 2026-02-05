@@ -1,0 +1,72 @@
+{
+  "title": "Espresso Forge Dark",
+  "author": "Decent",
+  "notes": "A dark roast pressure profile that emulates the flow and temperature characteristics of the Espresso Forge manual machine. Good for medium to dark roasts where you want to pull out more fruit flavors, similar to the classic Italian Lever profile.",
+  "beverage_type": "espresso",
+  "steps": [
+    {
+      "name": "preinfusion",
+      "temperature": "84.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "1",
+      "flow": "6.0",
+      "seconds": "10.0",
+      "volume": "100",
+      "weight": "0",
+      "exit": {
+        "type": "pressure",
+        "condition": "over",
+        "value": "3.0"
+      }
+    },
+    {
+      "name": "rise and hold",
+      "temperature": "81.0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "fast",
+      "pressure": "7.5",
+      "flow": "0",
+      "seconds": "8.0",
+      "volume": "100",
+      "weight": "0"
+    },
+    {
+      "name": "decline",
+      "temperature": "78.0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "smooth",
+      "pressure": "3.0",
+      "flow": "0",
+      "seconds": "30.0",
+      "volume": "100",
+      "weight": "0"
+    },
+    {
+      "name": "reset temperature",
+      "temperature": "84.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "smooth",
+      "pressure": "3.0",
+      "flow": "0.0",
+      "seconds": "1.0",
+      "volume": "100",
+      "weight": "0"
+    }
+  ],
+  "tank_temperature": "0",
+  "target_weight": "42",
+  "target_volume": "0",
+  "target_volume_count_start": "0",
+  "legacy_profile_type": "settings_2c",
+  "type": "advanced",
+  "lang": "en",
+  "hidden": "1",
+  "reference_file": "EspressoForge_Dark",
+  "changes_since_last_espresso": "",
+  "version": "2"
+}

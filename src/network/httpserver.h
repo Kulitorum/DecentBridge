@@ -28,8 +28,11 @@ public:
 
     bool isRunning() const { return m_server && m_server->isListening(); }
 
+    void setSkinRoot(const QString &path);
+
 signals:
     void requestReceived(const QString &method, const QString &path);
+    void webSocketUpgradeRequested(QTcpSocket *socket);
 
 private slots:
     void onNewConnection();
@@ -93,6 +96,26 @@ private:
     void handleGetSettings(const HttpRequest &req, HttpResponse &res);
     void handlePostSettings(const HttpRequest &req, HttpResponse &res);
 
+    // Route handlers - Key-value store, workflow, shots
+    void handleGetStore(const HttpRequest &req, HttpResponse &res, const QString &ns, const QString &key);
+    void handlePostStore(const HttpRequest &req, HttpResponse &res, const QString &ns, const QString &key);
+    void handleGetWorkflow(const HttpRequest &req, HttpResponse &res);
+    void handlePutWorkflow(const HttpRequest &req, HttpResponse &res);
+    void handleGetShots(const HttpRequest &req, HttpResponse &res);
+
+    // Route handlers - Profiles
+    void handleGetProfiles(const HttpRequest &req, HttpResponse &res);
+    void handleGetProfileById(const HttpRequest &req, HttpResponse &res, const QString &id);
+    void handlePostProfiles(const HttpRequest &req, HttpResponse &res);
+    void handleDeleteProfile(const HttpRequest &req, HttpResponse &res, const QString &id);
+
+    QString storeDir() const;
+    QString profilesDir() const;
+    void ensureDefaultProfiles();
+
+    // Dev tools
+    void handlePutDevSkin(const HttpRequest &req, HttpResponse &res, const QString &filePath);
+
     // Dashboard
     void handleDashboard(const HttpRequest &req, HttpResponse &res);
 
@@ -101,12 +124,17 @@ private:
     void handleApiDocsFile(const HttpRequest &req, HttpResponse &res, const QString &filename);
     void handleFavicon(const HttpRequest &req, HttpResponse &res);
 
+    // Static file serving
+    bool serveStaticFile(const HttpRequest &req, HttpResponse &res);
+    QString guessMimeType(const QString &filename) const;
+
     Bridge *m_bridge;
     QTcpServer *m_server = nullptr;
     QMap<QString, RouteHandler> m_getRoutes;
     QMap<QString, RouteHandler> m_postRoutes;
     QMap<QString, RouteHandler> m_putRoutes;
     QMap<QTcpSocket*, QByteArray> m_socketBuffers;
+    QString m_skinRoot;
 };
 
 #endif // HTTPSERVER_H

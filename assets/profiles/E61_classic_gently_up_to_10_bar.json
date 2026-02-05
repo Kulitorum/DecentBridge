@@ -1,0 +1,60 @@
+{
+  "title": "E61 classic gently up to 10 bar",
+  "author": "Decent",
+  "notes": "This high tech variation on the classic E61 9 bar shot brings out more acidity by increasing pressure towards the end of the shot.  This makes it more appropriate to drink without milk.  It will be quite thick, so adding water to make an Americano is recommended.",
+  "beverage_type": "espresso",
+  "steps": [
+    {
+      "name": "preinfusion",
+      "temperature": "92.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "1",
+      "flow": "8.0",
+      "seconds": "10",
+      "volume": "0",
+      "weight": "0",
+      "exit": {
+        "type": "pressure",
+        "condition": "over",
+        "value": "4"
+      }
+    },
+    {
+      "name": "rise and hold",
+      "temperature": "92.0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "fast",
+      "pressure": "9.0",
+      "flow": "",
+      "seconds": "5",
+      "volume": "0",
+      "weight": "0"
+    },
+    {
+      "name": "decline",
+      "temperature": "92.0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "smooth",
+      "pressure": "10.0",
+      "flow": "",
+      "seconds": "20",
+      "volume": "0",
+      "weight": "0"
+    }
+  ],
+  "tank_temperature": "0",
+  "target_weight": "36",
+  "target_volume": "36",
+  "target_volume_count_start": "0",
+  "legacy_profile_type": "settings_2a",
+  "type": "pressure",
+  "lang": "en",
+  "hidden": "1",
+  "reference_file": "e61 classic gently up to 10 bar",
+  "changes_since_last_espresso": "",
+  "version": "2"
+}

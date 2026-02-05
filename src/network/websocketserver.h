@@ -8,6 +8,7 @@
 #include <QMap>
 
 class Bridge;
+class QTcpSocket;
 
 /**
  * @brief WebSocket server for real-time data streaming
@@ -33,6 +34,9 @@ public:
     void stop();
 
     bool isRunning() const { return m_server && m_server->isListening(); }
+
+    // Accept a WebSocket upgrade from a TCP socket on the HTTP port
+    void handleUpgrade(QTcpSocket *socket);
 
 public slots:
     // Called by Bridge/DE1 when data changes

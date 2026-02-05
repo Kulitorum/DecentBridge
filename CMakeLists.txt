@@ -28,11 +28,13 @@ set(SOURCES
     src/main.cpp
     src/core/bridge.cpp
     src/core/settings.cpp
+    src/core/skinmanager.cpp
 )
 
 set(HEADERS
     src/core/bridge.h
     src/core/settings.h
+    src/core/skinmanager.h
 )
 
 # BLE core
@@ -158,6 +160,19 @@ qt_add_resources(${PROJECT_NAME} "api_docs"
         assets/api/favicon.png
 )
 
+# Bundled skin (fallback for first launch without internet)
+qt_add_resources(${PROJECT_NAME} "skin"
+    PREFIX "/"
+    FILES assets/skin.zip
+)
+
+# Add bundled default profiles
+file(GLOB PROFILE_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "assets/profiles/*.json")
+qt_add_resources(${PROJECT_NAME} "profiles"
+    PREFIX "/"
+    FILES ${PROFILE_FILES}
+)
+
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
@@ -166,10 +181,33 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     APP_VERSION="${PROJECT_VERSION}"
 )
 
+# mDNS service advertisement (pure Qt, no platform dependencies)
+include(FetchContent)
+FetchContent_Declare(
+    qmdnsengine
+    URL https://github.com/nitroshare/qmdnsengine/archive/refs/heads/master.zip
+)
+FetchContent_MakeAvailable(qmdnsengine)
+
+# miniz for zip extraction (single-file, public domain)
+# Suppress CMake policy warning for miniz's old cmake_minimum_required
+set(_saved_cmake_policy_min "${CMAKE_POLICY_VERSION_MINIMUM}")
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+FetchContent_Declare(
+    miniz
+    URL https://github.com/richgel999/miniz/archive/refs/tags/3.0.2.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(miniz)
+set(CMAKE_POLICY_VERSION_MINIMUM "${_saved_cmake_policy_min}")
+if(ANDROID)
+    # Enable 64-bit file APIs on Android to suppress miniz largefile warning
+    target_compile_definitions(miniz PRIVATE _LARGEFILE64_SOURCE)
+endif()
+
 # Android specific
 if(ANDROID)
     # Fetch OpenSSL for Android (fixes "No functional TLS backend" error)
-    include(FetchContent)
     FetchContent_Declare(
         android_openssl
         URL https://github.com/KDAB/android_openssl/archive/refs/heads/master.zip
@@ -197,6 +235,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Gui
     Qt6::Quick
     Qt6::Qml
+    qmdnsengine
+    miniz
 )
 
 # iOS specific

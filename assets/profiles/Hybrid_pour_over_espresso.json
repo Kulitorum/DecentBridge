@@ -1,0 +1,60 @@
+{
+  "title": "Hybrid pour over espresso",
+  "author": "Decent",
+  "notes": "Another approach created by a famously innovative Seattle-based espresso machine manufacturer, this technique requires you to grind your coffee very finely.  Try this with very lightly roasted coffee beans.  The resulting flavor is a blend of pour-over and espresso techniques.",
+  "beverage_type": "espresso",
+  "steps": [
+    {
+      "name": "preinfusion",
+      "temperature": "92.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "1",
+      "flow": "4.2",
+      "seconds": "6",
+      "volume": "0",
+      "weight": "0",
+      "exit": {
+        "type": "pressure",
+        "condition": "over",
+        "value": "6"
+      }
+    },
+    {
+      "name": "hold",
+      "temperature": "92.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "",
+      "flow": "2.2",
+      "seconds": "0",
+      "volume": "0",
+      "weight": "0"
+    },
+    {
+      "name": "decline",
+      "temperature": "92.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "smooth",
+      "pressure": "",
+      "flow": "1.8",
+      "seconds": "23",
+      "volume": "0",
+      "weight": "0"
+    }
+  ],
+  "tank_temperature": "0",
+  "target_weight": "36",
+  "target_volume": "0",
+  "target_volume_count_start": "0",
+  "legacy_profile_type": "settings_2b",
+  "type": "flow",
+  "lang": "en",
+  "hidden": "1",
+  "reference_file": "Hybrid pour over espresso",
+  "changes_since_last_espresso": "",
+  "version": "2"
+}

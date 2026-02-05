@@ -1,0 +1,93 @@
+{
+  "title": "Weiss advanced spring lever",
+  "author": "Decent",
+  "notes": "advanced spring lever profile, with additional steps to salvage choked shots",
+  "beverage_type": "espresso",
+  "steps": [
+    {
+      "name": "infuse",
+      "temperature": "90.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "0",
+      "flow": "8.0",
+      "seconds": "10",
+      "volume": "0",
+      "weight": "0.0",
+      "exit": {
+        "type": "pressure",
+        "condition": "over",
+        "value": "6.0"
+      },
+      "limiter": {
+        "value": "0",
+        "range": "0.6"
+      }
+    },
+    {
+      "name": "rise and hold",
+      "temperature": "90.0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "fast",
+      "pressure": "9.0",
+      "flow": "8.0",
+      "seconds": "3.00",
+      "volume": "0",
+      "weight": "0.0",
+      "limiter": {
+        "value": "0",
+        "range": "0.6"
+      }
+    },
+    {
+      "name": "decline",
+      "temperature": "90.0",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "smooth",
+      "pressure": "6.0",
+      "flow": "8.0",
+      "seconds": "30",
+      "volume": "0",
+      "weight": "0.0",
+      "exit": {
+        "type": "pressure",
+        "condition": "under",
+        "value": "6.0"
+      },
+      "limiter": {
+        "value": "1.5",
+        "range": "0.6"
+      }
+    },
+    {
+      "name": "flow limit",
+      "temperature": "90.0",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "smooth",
+      "pressure": "3.0",
+      "flow": "1.5",
+      "seconds": "30",
+      "volume": "0",
+      "weight": "0.0",
+      "limiter": {
+        "value": "6.0",
+        "range": "0.6"
+      }
+    }
+  ],
+  "tank_temperature": "0",
+  "target_weight": "32",
+  "target_volume": "0",
+  "target_volume_count_start": "0",
+  "legacy_profile_type": "settings_2c",
+  "type": "advanced",
+  "lang": "en",
+  "hidden": "1",
+  "reference_file": "Weiss_advanced_spring_lever",
+  "changes_since_last_espresso": "",
+  "version": "2"
+}

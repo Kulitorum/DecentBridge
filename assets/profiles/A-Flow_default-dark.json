@@ -1,0 +1,130 @@
+{
+  "title": "A-Flow / default-dark",
+  "author": "Decent",
+  "notes": "A-Flow: an alternative profile for D-Flow",
+  "beverage_type": "espresso",
+  "steps": [
+    {
+      "name": "Fill",
+      "temperature": "93",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "3.0",
+      "flow": "8.0",
+      "seconds": "15",
+      "volume": "100",
+      "weight": "0.0",
+      "exit": {
+        "type": "pressure",
+        "condition": "over",
+        "value": "3.00"
+      },
+      "limiter": {
+        "value": "8.0",
+        "range": "0.6"
+      }
+    },
+    {
+      "name": "Infuse",
+      "temperature": "93",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "fast",
+      "pressure": "3.0",
+      "flow": "0.0",
+      "seconds": "10.0",
+      "volume": "100",
+      "weight": "2.0",
+      "limiter": {
+        "value": "1.0",
+        "range": "0.6"
+      }
+    },
+    {
+      "name": "Pressure Up",
+      "temperature": "88",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "smooth",
+      "pressure": "9.0",
+      "flow": "8",
+      "seconds": "5",
+      "volume": "100",
+      "weight": "0.0",
+      "exit": {
+        "type": "flow",
+        "condition": "over",
+        "value": "2.0"
+      },
+      "limiter": {
+        "value": "0",
+        "range": "0.6"
+      }
+    },
+    {
+      "name": "Pressure Decline",
+      "temperature": "88",
+      "sensor": "coffee",
+      "pump": "pressure",
+      "transition": "smooth",
+      "pressure": "1.0",
+      "flow": "8",
+      "seconds": "0",
+      "volume": "100",
+      "weight": "0.0",
+      "exit": {
+        "type": "flow",
+        "condition": "under",
+        "value": "2.1"
+      },
+      "limiter": {
+        "value": "0",
+        "range": "0.6"
+      }
+    },
+    {
+      "name": "Flow Start",
+      "temperature": "88",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "fast",
+      "pressure": "3.0",
+      "flow": "2.0",
+      "seconds": "0",
+      "volume": "100",
+      "weight": "0.0",
+      "limiter": {
+        "value": "0",
+        "range": "0.6"
+      }
+    },
+    {
+      "name": "Flow Extraction",
+      "temperature": "88",
+      "sensor": "coffee",
+      "pump": "flow",
+      "transition": "smooth",
+      "pressure": "3.0",
+      "flow": "0",
+      "seconds": "60",
+      "volume": "100",
+      "weight": "0.0",
+      "limiter": {
+        "value": "9.0",
+        "range": "0.6"
+      }
+    }
+  ],
+  "tank_temperature": "0",
+  "target_weight": "36",
+  "target_volume": "100",
+  "target_volume_count_start": "2",
+  "legacy_profile_type": "settings_2c",
+  "type": "advanced",
+  "lang": "en",
+  "hidden": "1",
+  "reference_file": "A-Flow____default-dark",
+  "changes_since_last_espresso": "",
+  "version": "2"
+}
